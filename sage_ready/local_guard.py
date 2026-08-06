@@ -72,13 +72,13 @@ def assert_localhost_bind(host: str) -> None:
 
 
 def runtime_info() -> dict:
+    """Public runtime snapshot — never include PC hostname or local paths."""
     system = platform.system()
+    blocked = cloud_block_reason()
     return {
         "platform": system,
         "is_windows": system.lower().startswith("win"),
-        "hostname": socket.gethostname(),
-        "cwd": str(Path.cwd()),
-        "cloud_blocked": cloud_block_reason() is not None,
-        "cloud_block_reason": cloud_block_reason(),
+        "cloud_blocked": blocked is not None,
+        "cloud_block_reason": blocked,
         "local_only": True,
     }

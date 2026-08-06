@@ -494,8 +494,8 @@
       }
 
       const label = data.is_windows
-        ? `Local Windows · ${data.hostname || "this PC"} · v${data.version}`
-        : `Local ${data.platform} · ${data.hostname || "this PC"} · v${data.version}`;
+        ? `Local Windows · v${data.version}`
+        : `Local ${data.platform || "PC"} · v${data.version}`;
       badge.textContent = label;
 
       if (!localPage) {

@@ -2,7 +2,7 @@
 
 One file for everything: install Sage Ready, run it, and use it to make **SageAttention** safe for **ComfyUI**.
 
-**Version:** 1.3.0  
+**Version:** 1.3.1  
 **Mode:** local-only (will **not** start in Cursor Cloud / remote agents)
 
 ---
@@ -61,7 +61,7 @@ Check import:
 python -c "from sage_ready import __version__; print(__version__)"
 ```
 
-You should see `1.3.0`.
+You should see `1.3.1`.
 
 ---
 
@@ -73,7 +73,7 @@ You should see `1.3.0`.
 
 In the page header you should see something like:
 
-`Local Windows · <your-pc-name> · v1.3.0`
+`Local Windows · v1.3.1`
 
 And the address bar must be:
 

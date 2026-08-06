@@ -335,7 +335,11 @@ class ApiRegressionTests(unittest.TestCase):
     def test_health_version(self):
         r = self.client.get("/api/health")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.json()["version"], "1.3.0")
+        data = r.json()
+        self.assertEqual(data["version"], "1.3.1")
+        # Never leak PC hostname or local paths into the public health API
+        self.assertNotIn("hostname", data)
+        self.assertNotIn("cwd", data)
 
     def test_verify_bad_json_does_not_500(self):
         # Call verify_kernel directly (bypasses cloud HTTP middleware)
