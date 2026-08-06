@@ -2,7 +2,7 @@
 
 A local web app that makes **SageAttention** install correctly for **ComfyUI**—into the right Python—and proves it with a real GPU attention test so nodes won’t crash or spit out black/noisy frames.
 
-**Version 1.1** focuses on clearer guidance, safer Python selection (portable first), version upgrades to post6 when available, and Ready only when the full checklist passes.
+**Version 1.2** is the release hardening pass: clearer guidance, safer Python selection, strict package-location checks, Ready only when the full checklist passes (including GPU), and fixes for install/repair edge cases.
 
 ## Quick start
 

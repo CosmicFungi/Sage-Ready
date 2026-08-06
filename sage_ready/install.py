@@ -59,7 +59,7 @@ def planned_actions(env: EnvSnapshot, plan: WheelPlan, mode: str) -> list[str]:
     else:
         actions.append(f"SageAttention fallback: {plan.package_spec}")
     if force:
-        actions.append("Mode: repair (force-reinstall into ComfyUI’s Python)")
+        actions.append("Mode: repair (force-reinstall into ComfyUI's Python)")
     return actions
 
 
@@ -74,7 +74,7 @@ def _ensure_pip(python: str, log: LogFn) -> None:
     if probe.returncode == 0:
         log(f"pip OK: {probe.stdout.strip()}")
         return
-    log("pip is missing — trying ensurepip …")
+    log("pip is missing -- trying ensurepip …")
     ensure = subprocess.run(
         [python, "-m", "ensurepip", "--upgrade"],
         capture_output=True,
@@ -91,6 +91,18 @@ def _ensure_pip(python: str, log: LogFn) -> None:
     log("ensurepip finished")
 
 
+def _should_force_repair(env: EnvSnapshot, plan: WheelPlan) -> bool:
+    """Compute repair need from live env state (do not trust env.needs_repair)."""
+    from .checks import package_in_target_env
+
+    if needs_version_upgrade(env, plan) or is_known_bad_needs_force(env):
+        return True
+    if env.sageattention_location and env.python_path:
+        if not package_in_target_env(env.sageattention_location, env):
+            return True
+    return False
+
+
 def install_stack(
     comfy_path: str,
     mode: str = "install",
@@ -101,11 +113,15 @@ def install_stack(
         if log:
             log(msg)
 
+    # Dry-runs only plan -- don't block a real install behind the exclusive lock
+    if dry_run:
+        return _install_stack_locked(comfy_path, mode, True, emit)
+
     if not _install_lock.acquire(blocking=False):
         raise RuntimeError("Another install is already running. Wait for it to finish.")
 
     try:
-        return _install_stack_locked(comfy_path, mode, dry_run, emit)
+        return _install_stack_locked(comfy_path, mode, False, emit)
     finally:
         _install_lock.release()
 
@@ -126,20 +142,33 @@ def _install_stack_locked(
         )
     if not env.torch_version or not env.torch_cuda_available:
         raise RuntimeError(
-            "CUDA-enabled PyTorch is required in ComfyUI’s Python before installing SageAttention."
+            "CUDA-enabled PyTorch is required in ComfyUI's Python before installing SageAttention."
         )
+
+    # Refresh probe fields used for location/version decisions
+    try:
+        probe = run_probe(Path(env.python_path))
+        env.python_prefix = probe.get("prefix") or env.python_prefix
+        env.site_packages = [str(p) for p in (probe.get("site_packages") or [])]
+        env.sageattention_version = (
+            probe.get("sageattention_version") or env.sageattention_version
+        )
+        env.sageattention_location = (
+            probe.get("sageattention_location") or env.sageattention_location
+        )
+    except Exception as exc:  # noqa: BLE001
+        emit(f"Pre-install probe note: {exc}")
 
     plan = plan_install(env)
 
     # Auto-upgrade to repair when version/location needs force
     effective_mode = mode
-    if mode == "install" and (
-        needs_version_upgrade(env, plan)
-        or is_known_bad_needs_force(env)
-        or env.needs_repair
-    ):
+    if mode == "install" and _should_force_repair(env, plan):
         effective_mode = "repair"
-        emit("Switching to repair mode so the recommended wheel replaces the current install.")
+        emit(
+            "Switching to repair mode so the recommended wheel force-reinstalls "
+            "into ComfyUI's Python."
+        )
 
     actions = planned_actions(env, plan, effective_mode)
     emit("Install plan:")
@@ -147,7 +176,7 @@ def _install_stack_locked(
         emit(f"  • {action}")
 
     if dry_run:
-        emit("Dry run only — no packages were changed.")
+        emit("Dry run only -- no packages were changed.")
         return {
             "ok": True,
             "dry_run": True,
@@ -172,7 +201,7 @@ def _install_stack_locked(
 
     _ensure_pip(python, collect)
 
-    # Mild pip tooling refresh — skip aggressive self-upgrade failures
+    # Mild pip tooling refresh -- skip aggressive self-upgrade failures
     try:
         for _ in stream_command(
             _pip_cmd(python, "install", "--upgrade", "setuptools", "wheel"),
@@ -282,11 +311,11 @@ def _install_stack_locked(
     )
     if confirm.returncode != 0:
         raise RuntimeError(
-            "Install finished but SageAttention still does not import in ComfyUI’s Python:\n"
+            "Install finished but SageAttention still does not import in ComfyUI's Python:\n"
             f"{confirm.stderr or confirm.stdout}"
         )
     installed_ver = confirm.stdout.strip() or sage_installed
-    collect(f"Import OK — sageattention {installed_ver}")
+    collect(f"Import OK -- sageattention {installed_ver}")
 
     # Refresh location sanity
     try:
@@ -320,10 +349,14 @@ def is_known_bad_needs_force(env: EnvSnapshot) -> bool:
 
 
 def write_launch_helper(comfy_path: str) -> Optional[str]:
-    """Create a helper launch script with --use-sage-attention."""
+    """Create a helper launch script with --use-sage-attention.
+
+    Existing helpers are backed up to *.bak before overwrite.
+    """
     env = resolve_environment(comfy_path)
     root = Path(env.comfy_path)
-    if env.platform.startswith("win"):
+    is_windows = env.platform.lower().startswith("win")
+    if is_windows:
         path = root / "run_sage_attention.bat"
         py = env.python_path or "python"
         content = (
@@ -339,7 +372,13 @@ def write_launch_helper(comfy_path: str) -> Optional[str]:
             "echo 'Starting ComfyUI with SageAttention enabled...'\n"
             f'exec "{py}" "{root / "main.py"}" --use-sage-attention "$@"\n'
         )
+    if path.exists():
+        bak = path.with_suffix(path.suffix + ".bak")
+        try:
+            bak.write_bytes(path.read_bytes())
+        except OSError:
+            pass
     path.write_text(content, encoding="utf-8")
-    if not env.platform.startswith("win"):
+    if not is_windows:
         path.chmod(path.stat().st_mode | 0o111)
     return str(path)

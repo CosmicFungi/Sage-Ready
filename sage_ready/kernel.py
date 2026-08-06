@@ -42,7 +42,7 @@ try:
             ).item()
         )
 
-    # HND: (batch, heads, seq, dim) — ComfyUI / sageattn default
+    # HND: (batch, heads, seq, dim) -- ComfyUI / sageattn default
     q = torch.randn(B, H, S, D, device=device, dtype=dtype)
     k = torch.randn(B, H, S, D, device=device, dtype=dtype)
     v = torch.randn(B, H, S, D, device=device, dtype=dtype)
@@ -79,7 +79,7 @@ try:
     else:
         result["detail"] = (
             f"GPU attention test failed (similarity {min_cosine:.5f}; need 0.99). "
-            "This wheel can cause black or noisy images in ComfyUI — "
+            "This wheel can cause black or noisy images in ComfyUI -- "
             "click Repair, then Test GPU again."
         )
 except Exception as e:

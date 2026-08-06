@@ -223,15 +223,25 @@ def run_probe(python_path: Path, timeout: int = 60) -> dict:
     )
     if result.returncode != 0:
         raise RuntimeError(
-            "Could not inspect ComfyUI’s Python "
+            "Could not inspect ComfyUI's Python "
             f"({python_path}). Details:\n{result.stderr or result.stdout}"
         )
-    lines = [ln for ln in result.stdout.splitlines() if ln.strip().startswith("{")]
-    if not lines:
+    data = None
+    for line in reversed(
+        [ln for ln in result.stdout.splitlines() if ln.strip().startswith("{")]
+    ):
+        try:
+            parsed = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            data = parsed
+            break
+    if data is None:
         raise RuntimeError(
             f"ComfyUI Python probe returned no data:\n{result.stdout}\n{result.stderr}"
         )
-    return json.loads(lines[-1])
+    return data
 
 
 def nvidia_smi_info() -> tuple[Optional[str], Optional[str]]:
@@ -261,16 +271,38 @@ def nvidia_smi_info() -> tuple[Optional[str], Optional[str]]:
 
 
 def find_launch_scripts(comfy_root: Path, main_py: Path) -> list[str]:
+    """Find likely ComfyUI launchers only (not every script in the parent tree)."""
     scripts: list[str] = []
-    search_roots = {comfy_root, main_py.parent, main_py.parent.parent}
-    patterns = ("*.bat", "*.ps1", "*.sh", "*.cmd")
+    # Stay inside the ComfyUI folder and its immediate portable parent
+    search_roots = {comfy_root.resolve(), main_py.parent.resolve()}
+    portable_parent = main_py.parent.parent
+    if (portable_parent / "python_embeded").is_dir() or (
+        portable_parent / "python_embedded"
+    ).is_dir():
+        search_roots.add(portable_parent.resolve())
+
+    preferred_names = {
+        "run_nvidia_gpu.bat",
+        "run_cpu.bat",
+        "run_sage_attention.bat",
+        "run_sage_attention.sh",
+        "comfyui.bat",
+        "comfyui.sh",
+        "start.sh",
+        "run.sh",
+    }
     for root in search_roots:
         if not root.is_dir():
             continue
-        for pattern in patterns:
-            for path in root.glob(pattern):
-                if path.is_file():
-                    scripts.append(str(path))
+        for path in root.iterdir():
+            if not path.is_file():
+                continue
+            name = path.name.lower()
+            if name in preferred_names or (
+                name.startswith("run_")
+                and name.endswith((".bat", ".sh", ".cmd", ".ps1"))
+            ):
+                scripts.append(str(path))
     return sorted(set(scripts))
 
 

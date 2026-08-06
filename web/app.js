@@ -119,12 +119,18 @@
 
   function formatEnv(env) {
     if (!env) return "";
-    const type = (env.environment_type || "unknown")
-      .replace("portable", "Portable")
-      .replace("venv", "Virtual env")
-      .replace("conda", "Conda")
-      .replace("system", "System")
-      .replace("active_venv", "Active virtual env");
+    const labels = {
+      portable: "Portable",
+      venv: "Virtual env",
+      active_venv: "Active virtual env",
+      conda: "Conda",
+      system: "System",
+      unknown: "Unknown",
+    };
+    const raw = env.environment_type || "unknown";
+    const fallback = raw.includes("(fallback)");
+    const key = raw.replace(/\s*\(fallback\)\s*/g, "").trim();
+    const type = (labels[key] || key) + (fallback ? " (fallback)" : "");
     return [
       `Environment: ${type}`,
       env.python_version && `Python ${env.python_version}`,

@@ -7,6 +7,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
+from .paths import ComfyPathMixin
+
 
 class CheckStatus(str, Enum):
     OK = "ok"
@@ -15,11 +17,11 @@ class CheckStatus(str, Enum):
     SKIP = "skip"
 
 
-class PathRequest(BaseModel):
+class PathRequest(ComfyPathMixin, BaseModel):
     comfy_path: str = Field(..., min_length=1)
 
 
-class InstallRequest(BaseModel):
+class InstallRequest(ComfyPathMixin, BaseModel):
     comfy_path: str = Field(..., min_length=1)
     mode: str = Field(default="install", pattern="^(install|repair)$")
     dry_run: bool = False

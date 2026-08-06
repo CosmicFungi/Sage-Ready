@@ -11,6 +11,18 @@ from .kernel import KERNEL_SCRIPT
 from .models import VerifyResponse
 
 
+def _parse_json_line(stdout: str) -> dict | None:
+    candidates = [ln for ln in stdout.splitlines() if ln.strip().startswith("{")]
+    for line in reversed(candidates):
+        try:
+            data = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict):
+            return data
+    return None
+
+
 def verify_kernel(comfy_path: str) -> VerifyResponse:
     try:
         env = resolve_environment(comfy_path)
@@ -41,12 +53,11 @@ def verify_kernel(comfy_path: str) -> VerifyResponse:
     except OSError as exc:
         return VerifyResponse(ok=False, error=str(exc), detail=str(exc))
 
-    lines = [ln for ln in proc.stdout.splitlines() if ln.strip().startswith("{")]
-    if not lines:
+    data = _parse_json_line(proc.stdout)
+    if data is None:
         err = proc.stderr or proc.stdout or "No output from GPU attention test"
         return VerifyResponse(ok=False, error=err, detail=err)
 
-    data = json.loads(lines[-1])
     return VerifyResponse(
         ok=bool(data.get("ok")),
         skipped=bool(data.get("skipped")),

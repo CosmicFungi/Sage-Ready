@@ -16,7 +16,7 @@ def parse_version_tuple(version: str) -> tuple[int, ...]:
         elif chunk.isdigit():
             parts.append(int(chunk))
         else:
-            # Non-numeric suffix — stop
+            # Non-numeric suffix -- stop
             break
     return tuple(parts) if parts else (0,)
 

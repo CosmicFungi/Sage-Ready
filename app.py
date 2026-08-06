@@ -42,6 +42,12 @@ _state: dict[str, Any] = {
     "last_verify": None,
     "last_install": None,
 }
+_state_lock = threading.Lock()
+
+
+def _set_state(**kwargs: Any) -> None:
+    with _state_lock:
+        _state.update(kwargs)
 
 
 @app.get("/api/health")
@@ -51,12 +57,13 @@ def health() -> dict[str, str]:
 
 @app.get("/api/status", response_model=StatusResponse)
 def status() -> StatusResponse:
-    return StatusResponse(
-        version=__version__,
-        last_scan=_state["last_scan"],
-        last_verify=_state["last_verify"],
-        last_install=_state["last_install"],
-    )
+    with _state_lock:
+        return StatusResponse(
+            version=__version__,
+            last_scan=_state["last_scan"],
+            last_verify=_state["last_verify"],
+            last_install=_state["last_install"],
+        )
 
 
 @app.post("/api/resolve", response_model=ResolveResponse)
@@ -72,14 +79,14 @@ def resolve(req: PathRequest) -> ResolveResponse:
 @app.post("/api/scan", response_model=ScanResponse)
 def scan(req: PathRequest) -> ScanResponse:
     result = scan_environment(req.comfy_path, include_kernel=True)
-    _state["last_scan"] = result
+    _set_state(last_scan=result)
     return result
 
 
 @app.post("/api/verify", response_model=VerifyResponse)
 def verify(req: PathRequest) -> VerifyResponse:
     result = verify_kernel(req.comfy_path)
-    _state["last_verify"] = result
+    _set_state(last_verify=result)
     return result
 
 
@@ -117,10 +124,10 @@ async def install(req: InstallRequest) -> StreamingResponse:
                 dry_run=req.dry_run,
                 log=log,
             )
-            _state["last_install"] = result
+            _set_state(last_install=result)
             queue.put(json.dumps({"type": "result", "ok": True, "result": result}))
         except Exception as exc:  # noqa: BLE001 — surface to UI
-            _state["last_install"] = {"ok": False, "error": str(exc)}
+            _set_state(last_install={"ok": False, "error": str(exc)})
             queue.put(json.dumps({"type": "result", "ok": False, "error": str(exc)}))
         finally:
             queue.put(None)

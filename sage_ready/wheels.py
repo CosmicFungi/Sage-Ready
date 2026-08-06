@@ -11,7 +11,7 @@ from typing import Any, Optional
 from urllib.parse import urlparse
 
 from .models import EnvSnapshot, WheelPlan
-from .versioning import version_less_than
+from .versioning import parse_version_tuple, version_less_than
 
 MATRIX_PATH = Path(__file__).with_name("wheels_matrix.json")
 BASE_RELEASE_URL = "https://github.com/woct0rdho/SageAttention/releases/download"
@@ -56,8 +56,10 @@ def cuda_code_from_env(env: EnvSnapshot) -> Optional[str]:
     return None
 
 
-def python_tag(python_version: str) -> str:
-    parts = python_version.split(".")
+def python_tag(python_version: str) -> Optional[str]:
+    parts = [p for p in python_version.split(".") if p]
+    if len(parts) < 2 or not parts[0].isdigit() or not parts[1].isdigit():
+        return None
     return f"{parts[0]}{parts[1]}"
 
 
@@ -142,6 +144,8 @@ def find_matching_wheel(
         return None
 
     py_tag = python_tag(env.python_version)
+    if not py_tag:
+        return None
     try:
         py_int = int(py_tag)
     except ValueError:
@@ -183,8 +187,8 @@ def find_matching_wheel(
     if not matches:
         return None
 
-    # Prefer highest sage_ver (post6 before post4/post3)
-    matches.sort(key=lambda m: m["sage_ver"], reverse=True)
+    # Prefer highest sage_ver using numeric version tuples (post10 > post6)
+    matches.sort(key=lambda m: parse_version_tuple(m["sage_ver"]), reverse=True)
     return matches[0]
 
 
@@ -212,7 +216,7 @@ def plan_install(env: EnvSnapshot, host_platform: Optional[str] = None) -> Wheel
                 f"{match['matched_cuda']} wheel.)"
             )
         if not is_allowed_wheel_url(match["wheel_url"]):
-            notes += " Wheel URL failed safety allowlist — install will be blocked."
+            notes += " Wheel URL failed safety allowlist -- install will be blocked."
         return WheelPlan(
             strategy="wheel",
             sage_version=match["sage_ver"],
@@ -233,7 +237,7 @@ def plan_install(env: EnvSnapshot, host_platform: Optional[str] = None) -> Wheel
             triton_constraint=constraint,
             wheel_url=None,
             notes=(
-                "On Linux we can’t use the Windows prebuilt wheels. "
+                "On Linux we can't use the Windows prebuilt wheels. "
                 "Install & Fix will try SageAttention 2.2.0 from pip "
                 "(may need a CUDA toolkit), then fall back to 1.0.6 if the build fails."
             ),
@@ -257,8 +261,10 @@ def plan_install(env: EnvSnapshot, host_platform: Optional[str] = None) -> Wheel
 def is_known_bad_version(version: Optional[str]) -> bool:
     if not version:
         return False
+    # Compare base version without local/build tags (+cu...)
+    base = version.strip().split("+")[0]
     bad = load_matrix().get("known_bad_versions", [])
-    return any(version == b or version.startswith(b) for b in bad)
+    return any(base == b for b in bad)
 
 
 def needs_version_upgrade(env: EnvSnapshot, plan: WheelPlan) -> bool:

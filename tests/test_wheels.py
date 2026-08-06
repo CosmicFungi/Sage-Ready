@@ -230,6 +230,7 @@ class CheckSummaryTests(unittest.TestCase):
         items = {
             "comfy_root": CheckStatus.OK,
             "python": CheckStatus.OK,
+            "nvidia_gpu": CheckStatus.OK,
             "torch": CheckStatus.OK,
             "triton": CheckStatus.OK,
             "sageattention": CheckStatus.OK,
