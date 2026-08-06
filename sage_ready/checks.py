@@ -10,6 +10,7 @@ from .detect import resolve_environment, run_probe
 from .kernel import KERNEL_SCRIPT
 from .models import CheckItem, CheckStatus, EnvSnapshot, ScanResponse, WheelPlan
 from .paths import path_under_prefix
+from .versioning import normalize_sage_version
 from .wheels import (
     is_known_bad_version,
     needs_version_upgrade,
@@ -290,12 +291,17 @@ def build_checks(env: EnvSnapshot, plan: WheelPlan, probe: dict | None = None) -
                 )
             )
         else:
+            nice = normalize_sage_version(env.sageattention_version or "")
+            detail = f"{env.sageattention_version}"
+            if nice and nice != env.sageattention_version:
+                detail += f" (= {nice})"
+            detail += f" matches recommended {plan.sage_version}."
             checks.append(
                 _check(
                     "sa_version",
                     "SageAttention version",
                     CheckStatus.OK,
-                    f"{env.sageattention_version} matches the recommended wheel plan.",
+                    detail,
                 )
             )
     else:

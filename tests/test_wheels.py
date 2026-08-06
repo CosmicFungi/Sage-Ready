@@ -48,6 +48,31 @@ class VersioningTests(unittest.TestCase):
         self.assertTrue(version_less_than("2.2.0.post5", "2.2.0.post6"))
         self.assertFalse(version_less_than("2.2.0.post6", "2.2.0.post6"))
 
+    def test_wheel_local_tag_equals_post6(self):
+        from sage_ready.versioning import normalize_sage_version, versions_equivalent
+
+        wheel_ver = "2.2.0+cu130torch2.10.0andhigher.post6"
+        self.assertEqual(normalize_sage_version(wheel_ver), "2.2.0.post6")
+        self.assertTrue(versions_equivalent(wheel_ver, "2.2.0.post6"))
+        self.assertFalse(version_less_than(wheel_ver, "2.2.0.post6"))
+        self.assertEqual(
+            parse_version_tuple(wheel_ver), parse_version_tuple("2.2.0.post6")
+        )
+
+    def test_needs_upgrade_false_for_installed_post6_wheel(self):
+        env = EnvSnapshot(
+            comfy_path="/c",
+            python_version="3.12.0",
+            torch_version="2.12.0+cu130",
+            torch_cuda="13.0",
+            torch_cuda_available=True,
+            sageattention_version="2.2.0+cu130torch2.10.0andhigher.post6",
+        )
+        plan = plan_install(env, host_platform="windows")
+        self.assertEqual(plan.sage_version, "2.2.0.post6")
+        self.assertFalse(needs_version_upgrade(env, plan))
+        self.assertFalse(is_known_bad_version(env.sageattention_version))
+
 
 class WheelMatchTests(unittest.TestCase):
     def _env(self, **kwargs):

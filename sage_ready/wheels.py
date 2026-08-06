@@ -11,7 +11,12 @@ from typing import Any, Optional
 from urllib.parse import urlparse
 
 from .models import EnvSnapshot, WheelPlan
-from .versioning import parse_version_tuple, version_less_than
+from .versioning import (
+    normalize_sage_version,
+    parse_version_tuple,
+    version_less_than,
+    versions_equivalent,
+)
 
 MATRIX_PATH = Path(__file__).with_name("wheels_matrix.json")
 BASE_RELEASE_URL = "https://github.com/woct0rdho/SageAttention/releases/download"
@@ -261,10 +266,10 @@ def plan_install(env: EnvSnapshot, host_platform: Optional[str] = None) -> Wheel
 def is_known_bad_version(version: Optional[str]) -> bool:
     if not version:
         return False
-    # Compare base version without local/build tags (+cu...)
-    base = version.strip().split("+")[0]
+    # Normalize wheel tags like 2.2.0+cu130...post5 → 2.2.0.post5
+    normalized = normalize_sage_version(version)
     bad = load_matrix().get("known_bad_versions", [])
-    return any(base == b for b in bad)
+    return any(normalized == b for b in bad)
 
 
 def needs_version_upgrade(env: EnvSnapshot, plan: WheelPlan) -> bool:
@@ -275,4 +280,7 @@ def needs_version_upgrade(env: EnvSnapshot, plan: WheelPlan) -> bool:
         return True
     if not env.sageattention_version:
         return True
+    # 2.2.0+cu130torch2.10.0andhigher.post6 == plan 2.2.0.post6
+    if versions_equivalent(env.sageattention_version, plan.sage_version):
+        return False
     return version_less_than(env.sageattention_version, plan.sage_version)
