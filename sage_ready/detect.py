@@ -14,25 +14,30 @@ from typing import Optional
 from .models import EnvSnapshot
 
 PROBE_SCRIPT = r"""
-import json, os, sys, platform
+import json, sys, platform
 out = {
     "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
     "executable": sys.executable,
+    "prefix": sys.prefix,
     "platform": platform.system().lower(),
     "torch_version": None,
     "torch_cuda": None,
     "torch_cuda_available": False,
     "gpu_name": None,
     "triton_version": None,
+    "triton_package": None,
     "sageattention_version": None,
     "sageattention_location": None,
+    "sageattn_import_ok": False,
     "site_packages": [],
+    "pip_ok": False,
 }
 try:
     import site
     out["site_packages"] = list(site.getsitepackages()) if hasattr(site, "getsitepackages") else []
-    if hasattr(site, "getusersitepackages"):
-        out["site_packages"].append(site.getusersitepackages())
+    usp = getattr(site, "getusersitepackages", None)
+    if callable(usp):
+        out["site_packages"].append(usp())
 except Exception:
     pass
 try:
@@ -78,6 +83,11 @@ try:
 except Exception as e:
     out["sage_error"] = str(e)
     out["sageattn_import_ok"] = False
+try:
+    import pip  # noqa: F401
+    out["pip_ok"] = True
+except Exception:
+    out["pip_ok"] = False
 print(json.dumps(out))
 """
 
@@ -93,47 +103,67 @@ def find_main_py(comfy_root: Path) -> Optional[Path]:
     candidate = comfy_root / "main.py"
     if candidate.is_file():
         return candidate
-    # Nested ComfyUI folder (portable zip layouts)
     nested = comfy_root / "ComfyUI" / "main.py"
     if nested.is_file():
         return nested
     return None
 
 
-def _candidate_pythons(comfy_root: Path, main_py: Path) -> list[tuple[str, Path]]:
-    """Return (environment_type, python_path) candidates in priority order."""
-    candidates: list[tuple[str, Path]] = []
+def _has_torch(python_path: Path) -> bool:
+    try:
+        result = subprocess.run(
+            [str(python_path), "-c", "import torch; print(torch.__version__)"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        return result.returncode == 0 and bool(result.stdout.strip())
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _candidate_pythons(comfy_root: Path, main_py: Path) -> list[tuple[str, Path, int]]:
+    """Return (environment_type, python_path, priority) — lower priority wins.
+
+    Priority bands:
+      0 = portable python_embeded next to ComfyUI
+      1 = .venv / venv next to ComfyUI
+      2 = VIRTUAL_ENV / CONDA_PREFIX (active shells — risky for wrong-env)
+      3 = system / current interpreter (last resort)
+    """
+    candidates: list[tuple[str, Path, int]] = []
     system = platform.system().lower()
     roots = [comfy_root, main_py.parent, main_py.parent.parent]
-
     seen: set[Path] = set()
+
+    def add(env_type: str, path: Path, priority: int) -> None:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            return
+        if not resolved.is_file() or resolved in seen:
+            return
+        seen.add(resolved)
+        candidates.append((env_type, resolved, priority))
+
     for root in roots:
         if system == "windows":
-            embedded = [
+            for p in (
                 root / "python_embeded" / "python.exe",
                 root / "python_embedded" / "python.exe",
                 root.parent / "python_embeded" / "python.exe",
                 root.parent / "python_embedded" / "python.exe",
-            ]
-            for p in embedded:
-                if p.is_file() and p not in seen:
-                    candidates.append(("portable", p))
-                    seen.add(p)
+            ):
+                add("portable", p, 0)
             for name in (".venv", "venv"):
                 for base in (root, root.parent):
-                    p = base / name / "Scripts" / "python.exe"
-                    if p.is_file() and p not in seen:
-                        candidates.append(("venv", p))
-                        seen.add(p)
+                    add("venv", base / name / "Scripts" / "python.exe", 1)
         else:
             for name in (".venv", "venv"):
                 for base in (root, root.parent):
-                    p = base / name / "bin" / "python"
-                    if p.is_file() and p not in seen:
-                        candidates.append(("venv", p))
-                        seen.add(p)
+                    add("venv", base / name / "bin" / "python", 1)
 
-    # VIRTUAL_ENV / CONDA_PREFIX when they contain torch (likely active Comfy env)
     for env_var, env_type in (("VIRTUAL_ENV", "venv"), ("CONDA_PREFIX", "conda")):
         prefix = os.environ.get(env_var)
         if not prefix:
@@ -144,42 +174,43 @@ def _candidate_pythons(comfy_root: Path, main_py: Path) -> list[tuple[str, Path]
                 p = Path(prefix) / "Scripts" / "python.exe"
         else:
             p = Path(prefix) / "bin" / "python"
-        if p.is_file() and p not in seen:
-            candidates.append((env_type, p))
-            seen.add(p)
+        # Active env is priority 2 — never preferred over portable
+        add(env_type if env_type != "venv" else "active_venv", p, 2)
 
-    # Last resort: current interpreter (useful for Linux/dev installs)
-    current = Path(sys.executable)
-    if current.is_file() and current not in seen:
-        candidates.append(("system", current))
-
+    add("system", Path(sys.executable), 3)
+    candidates.sort(key=lambda row: row[2])
     return candidates
 
 
-def resolve_python(comfy_root: Path, main_py: Path) -> tuple[str, Path]:
+def resolve_python(comfy_root: Path, main_py: Path) -> tuple[str, Path, bool]:
+    """Return (environment_type, python_path, is_fallback).
+
+    is_fallback True means we used conda/active/system instead of portable/venv.
+    """
     candidates = _candidate_pythons(comfy_root, main_py)
     if not candidates:
         raise FileNotFoundError(
             "Could not find a Python interpreter for this ComfyUI folder. "
-            "Expected python_embeded/python.exe (portable) or a .venv."
+            "Expected python_embeded/python.exe (portable) or a .venv beside ComfyUI."
         )
 
-    # Prefer a candidate that already has torch installed
-    for env_type, python_path in candidates:
-        try:
-            result = subprocess.run(
-                [str(python_path), "-c", "import torch; print(torch.__version__)"],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                check=False,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                return env_type, python_path
-        except (OSError, subprocess.TimeoutExpired):
-            continue
+    # Prefer local portable/venv that already has torch
+    for env_type, python_path, priority in candidates:
+        if priority <= 1 and _has_torch(python_path):
+            return env_type, python_path, False
 
-    return candidates[0]
+    # Local portable/venv without torch — still better than foreign envs
+    for env_type, python_path, priority in candidates:
+        if priority <= 1:
+            return env_type, python_path, False
+
+    # Fallback: active/system with torch
+    for env_type, python_path, priority in candidates:
+        if _has_torch(python_path):
+            return env_type, python_path, True
+
+    env_type, python_path, _ = candidates[0]
+    return env_type, python_path, True
 
 
 def run_probe(python_path: Path, timeout: int = 60) -> dict:
@@ -192,17 +223,18 @@ def run_probe(python_path: Path, timeout: int = 60) -> dict:
     )
     if result.returncode != 0:
         raise RuntimeError(
-            f"Failed to probe interpreter {python_path}:\n{result.stderr or result.stdout}"
+            "Could not inspect ComfyUI’s Python "
+            f"({python_path}). Details:\n{result.stderr or result.stdout}"
         )
-    # Probe prints one JSON line; tolerate trailing noise
     lines = [ln for ln in result.stdout.splitlines() if ln.strip().startswith("{")]
     if not lines:
-        raise RuntimeError(f"Probe returned no JSON:\n{result.stdout}\n{result.stderr}")
+        raise RuntimeError(
+            f"ComfyUI Python probe returned no data:\n{result.stdout}\n{result.stderr}"
+        )
     return json.loads(lines[-1])
 
 
 def nvidia_smi_info() -> tuple[Optional[str], Optional[str]]:
-    """Return (gpu_name, driver_version) from nvidia-smi if available."""
     try:
         result = subprocess.run(
             [
@@ -257,22 +289,26 @@ def launch_scripts_have_sage_flag(scripts: list[str]) -> bool:
 def resolve_environment(comfy_path: str) -> EnvSnapshot:
     root = normalize_comfy_path(comfy_path)
     if not root.exists():
-        raise FileNotFoundError(f"Path does not exist: {root}")
+        raise FileNotFoundError(
+            f"That path does not exist: {root}. "
+            "Choose your ComfyUI folder (the one with main.py)."
+        )
 
     main_py = find_main_py(root)
     if main_py is None:
         raise FileNotFoundError(
-            f"No main.py found under {root}. Point to your ComfyUI folder "
-            "(the one that contains main.py)."
+            f"No main.py found under {root}. "
+            "Point to your ComfyUI folder — portable root or the inner ComfyUI folder both work."
         )
 
-    # Prefer the directory that actually contains main.py for nested layouts
     comfy_root = main_py.parent
-    env_type, python_path = resolve_python(root if root == comfy_root else root, main_py)
-    # If nested, also try resolving against comfy_root
-    if env_type == "system":
+    env_type, python_path, is_fallback = resolve_python(root, main_py)
+    # Also try resolving strictly against the folder that holds main.py
+    if is_fallback:
         try:
-            env_type, python_path = resolve_python(comfy_root, main_py)
+            alt_type, alt_path, alt_fallback = resolve_python(comfy_root, main_py)
+            if not alt_fallback:
+                env_type, python_path, is_fallback = alt_type, alt_path, alt_fallback
         except FileNotFoundError:
             pass
 
@@ -280,11 +316,17 @@ def resolve_environment(comfy_path: str) -> EnvSnapshot:
     gpu_name, driver = nvidia_smi_info()
     scripts = find_launch_scripts(root, main_py)
 
+    display_type = env_type
+    if is_fallback and env_type in {"system", "conda", "active_venv"}:
+        display_type = f"{env_type} (fallback)"
+
     return EnvSnapshot(
         comfy_path=str(comfy_root),
         main_py=str(main_py),
         python_path=str(python_path),
-        environment_type=env_type,
+        python_prefix=probe.get("prefix"),
+        environment_type=display_type,
+        python_is_fallback=is_fallback,
         python_version=probe.get("python_version") or "",
         platform=probe.get("platform") or platform.system().lower(),
         torch_version=probe.get("torch_version"),
@@ -295,6 +337,8 @@ def resolve_environment(comfy_path: str) -> EnvSnapshot:
         triton_version=probe.get("triton_version"),
         sageattention_version=probe.get("sageattention_version"),
         sageattention_location=probe.get("sageattention_location"),
+        site_packages=[str(p) for p in (probe.get("site_packages") or [])],
+        pip_ok=bool(probe.get("pip_ok")),
         has_use_sage_flag=launch_scripts_have_sage_flag(scripts),
         launch_scripts=scripts,
     )

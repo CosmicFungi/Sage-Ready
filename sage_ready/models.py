@@ -37,7 +37,9 @@ class EnvSnapshot(BaseModel):
     comfy_path: str
     main_py: Optional[str] = None
     python_path: Optional[str] = None
+    python_prefix: Optional[str] = None
     environment_type: str = "unknown"
+    python_is_fallback: bool = False
     python_version: str = ""
     platform: str = ""
     torch_version: Optional[str] = None
@@ -48,8 +50,11 @@ class EnvSnapshot(BaseModel):
     triton_version: Optional[str] = None
     sageattention_version: Optional[str] = None
     sageattention_location: Optional[str] = None
+    site_packages: list[str] = Field(default_factory=list)
+    pip_ok: bool = False
     has_use_sage_flag: bool = False
     launch_scripts: list[str] = Field(default_factory=list)
+    needs_repair: bool = False
 
 
 class WheelPlan(BaseModel):

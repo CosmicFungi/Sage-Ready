@@ -8,11 +8,17 @@ import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 from .models import EnvSnapshot, WheelPlan
+from .versioning import version_less_than
 
 MATRIX_PATH = Path(__file__).with_name("wheels_matrix.json")
 BASE_RELEASE_URL = "https://github.com/woct0rdho/SageAttention/releases/download"
+ALLOWED_WHEEL_HOSTS = frozenset({"github.com", "objects.githubusercontent.com"})
+ALLOWED_WHEEL_PREFIXES = (
+    "https://github.com/woct0rdho/SageAttention/releases/download/",
+)
 
 
 @lru_cache(maxsize=1)
@@ -98,6 +104,13 @@ def build_wheel_url(entry: dict[str, Any]) -> str:
     return f"{BASE_RELEASE_URL}/{tag}/{name}"
 
 
+def is_allowed_wheel_url(url: str) -> bool:
+    if not url.startswith(ALLOWED_WHEEL_PREFIXES):
+        return False
+    host = urlparse(url).hostname or ""
+    return host in ALLOWED_WHEEL_HOSTS
+
+
 def triton_constraint_for_torch(torch_version: str) -> str:
     matrix = load_matrix()
     _, major_minor, _ = parse_torch_version(torch_version)
@@ -135,6 +148,7 @@ def find_matching_wheel(
         return None
 
     aliases = matrix.get("cuda_aliases", {})
+    matches: list[dict[str, Any]] = []
 
     for entry in matrix["wheels"]:
         platforms = entry.get("platforms") or ["win32"]
@@ -164,9 +178,18 @@ def find_matching_wheel(
         matched["wheel_url"] = build_wheel_url(entry)
         matched["detected_cuda"] = cuda
         matched["matched_cuda"] = entry["cuda"]
-        return matched
+        matches.append(matched)
 
-    return None
+    if not matches:
+        return None
+
+    # Prefer highest sage_ver (post6 before post4/post3)
+    matches.sort(key=lambda m: m["sage_ver"], reverse=True)
+    return matches[0]
+
+
+def preferred_sa_version() -> str:
+    return load_matrix().get("preferred_min_sa2", "2.2.0.post6")
 
 
 def plan_install(env: EnvSnapshot, host_platform: Optional[str] = None) -> WheelPlan:
@@ -175,12 +198,21 @@ def plan_install(env: EnvSnapshot, host_platform: Optional[str] = None) -> Wheel
     triton_pkg = "triton-windows" if is_windows else "triton"
     torch_ver = env.torch_version or "0.0.0"
     constraint = triton_constraint_for_torch(torch_ver)
+    preferred = preferred_sa_version()
 
     match = find_matching_wheel(env, host_platform=host)
     if match:
-        notes = f"Prebuilt SageAttention {match['sage_ver']} for CUDA {match['matched_cuda']} / Torch {match['torch_pattern']}"
+        notes = (
+            f"Matching prebuilt SageAttention {match['sage_ver']} "
+            f"for CUDA {match['matched_cuda']} / PyTorch {match['torch_pattern']}."
+        )
         if match.get("detected_cuda") != match.get("matched_cuda"):
-            notes += f" (CUDA {match['detected_cuda']} aliased to {match['matched_cuda']})"
+            notes += (
+                f" (Your CUDA {match['detected_cuda']} safely uses the "
+                f"{match['matched_cuda']} wheel.)"
+            )
+        if not is_allowed_wheel_url(match["wheel_url"]):
+            notes += " Wheel URL failed safety allowlist — install will be blocked."
         return WheelPlan(
             strategy="wheel",
             sage_version=match["sage_ver"],
@@ -191,20 +223,19 @@ def plan_install(env: EnvSnapshot, host_platform: Optional[str] = None) -> Wheel
             notes=notes,
         )
 
-    # Linux / unmatched: try pip SA2 then fall back note
     matrix = load_matrix()
     if not is_windows:
         return WheelPlan(
             strategy="pip_sa2_or_fallback",
-            sage_version="2.2.0-or-1.0.6",
+            sage_version=preferred,
             package_spec="sageattention==2.2.0",
             triton_package=triton_pkg,
             triton_constraint=constraint,
             wheel_url=None,
             notes=(
-                "No Windows prebuilt wheel applies on this OS. "
-                "Will try pip sageattention==2.2.0 (--no-build-isolation), "
-                f"then fall back to {matrix['fallback_pypi']}."
+                "On Linux we can’t use the Windows prebuilt wheels. "
+                "Install & Fix will try SageAttention 2.2.0 from pip "
+                "(may need a CUDA toolkit), then fall back to 1.0.6 if the build fails."
             ),
         )
 
@@ -216,8 +247,9 @@ def plan_install(env: EnvSnapshot, host_platform: Optional[str] = None) -> Wheel
         triton_constraint=constraint,
         wheel_url=None,
         notes=(
-            "No matching SageAttention 2.x wheel for this Python/Torch/CUDA combo. "
-            f"Will install {matrix['fallback_pypi']} (Triton-only, ~2.1x vs FA2)."
+            "No matching SageAttention 2.x wheel for this Python/PyTorch/CUDA mix. "
+            "Install & Fix will use sageattention==1.0.6 "
+            "(slower, but usually works without a custom wheel)."
         ),
     )
 
@@ -227,3 +259,14 @@ def is_known_bad_version(version: Optional[str]) -> bool:
         return False
     bad = load_matrix().get("known_bad_versions", [])
     return any(version == b or version.startswith(b) for b in bad)
+
+
+def needs_version_upgrade(env: EnvSnapshot, plan: WheelPlan) -> bool:
+    """True when a better planned SA2 wheel exists than what is installed."""
+    if plan.strategy != "wheel":
+        return is_known_bad_version(env.sageattention_version)
+    if is_known_bad_version(env.sageattention_version):
+        return True
+    if not env.sageattention_version:
+        return True
+    return version_less_than(env.sageattention_version, plan.sage_version)

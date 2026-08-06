@@ -2,11 +2,13 @@
   const $ = (id) => document.getElementById(id);
 
   const pathInput = $("comfy-path");
+  const pathError = $("path-error");
   const btnScan = $("btn-scan");
   const btnFix = $("btn-fix");
   const btnRepair = $("btn-repair");
   const btnVerify = $("btn-verify");
   const btnCopy = $("btn-copy");
+  const btnHelper = $("btn-helper");
   const btnRescan = $("btn-rescan");
   const stepReport = $("step-report");
   const stepReady = $("step-ready");
@@ -18,26 +20,51 @@
   const launchCmd = $("launch-cmd");
   const readyCopy = $("ready-copy");
   const helperHint = $("helper-hint");
+  const shell = document.querySelector(".shell");
 
-  const STATUS_GLYPH = {
-    ok: "✓",
-    warn: "!",
-    fail: "✕",
-    skip: "–",
+  const STATUS_GLYPH = { ok: "✓", warn: "!", fail: "✕", skip: "–" };
+  const DEFAULT_BUTTONS = {
+    scan: "Scan",
+    fix: "Install & Fix",
+    repair: "Repair",
+    verify: "Test GPU",
   };
 
   let lastPath = "";
-  let busy = false;
+  let lastScan = null;
+  let busyDepth = 0;
+  let activeBusyBtn = null;
 
-  function setBusy(state, label) {
-    busy = state;
-    [btnScan, btnFix, btnRepair, btnVerify].forEach((btn) => {
-      btn.disabled = state;
-    });
-    if (state && label) {
-      btnScan.textContent = label;
+  function setPathError(msg) {
+    if (!msg) {
+      pathError.textContent = "";
+      pathError.classList.add("hidden");
+      return;
+    }
+    pathError.textContent = msg;
+    pathError.classList.remove("hidden");
+  }
+
+  function setBusy(state, btn, label) {
+    if (state) {
+      busyDepth += 1;
+      activeBusyBtn = btn || null;
+      [btnScan, btnFix, btnRepair, btnVerify, btnHelper].forEach((b) => {
+        b.disabled = true;
+      });
+      if (btn && label) btn.textContent = label;
     } else {
-      btnScan.textContent = "Scan";
+      busyDepth = Math.max(0, busyDepth - 1);
+      if (busyDepth === 0) {
+        [btnScan, btnFix, btnRepair, btnVerify, btnHelper].forEach((b) => {
+          b.disabled = false;
+        });
+        btnScan.textContent = DEFAULT_BUTTONS.scan;
+        btnFix.textContent = DEFAULT_BUTTONS.fix;
+        btnRepair.textContent = DEFAULT_BUTTONS.repair;
+        btnVerify.textContent = DEFAULT_BUTTONS.verify;
+        activeBusyBtn = null;
+      }
     }
   }
 
@@ -47,6 +74,14 @@
 
   function hide(el) {
     el.classList.add("hidden");
+  }
+
+  function friendlyError(err) {
+    const text = String(err || "Something went wrong");
+    if (text.includes("Failed to fetch") || text.includes("NetworkError")) {
+      return "Can’t reach Sage Ready. Is the app still running?";
+    }
+    return text;
   }
 
   function renderChecks(checks) {
@@ -82,65 +117,93 @@
     });
   }
 
-  async function scan() {
+  function formatEnv(env) {
+    if (!env) return "";
+    const type = (env.environment_type || "unknown")
+      .replace("portable", "Portable")
+      .replace("venv", "Virtual env")
+      .replace("conda", "Conda")
+      .replace("system", "System")
+      .replace("active_venv", "Active virtual env");
+    return [
+      `Environment: ${type}`,
+      env.python_version && `Python ${env.python_version}`,
+      env.torch_version && `PyTorch ${env.torch_version}`,
+      env.gpu_name,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+
+  async function performScan() {
     const comfy_path = pathInput.value.trim();
     if (!comfy_path) {
+      setPathError("Enter the path to your ComfyUI folder (the one with main.py).");
       pathInput.focus();
-      return;
+      return null;
     }
+    setPathError("");
     lastPath = comfy_path;
-    setBusy(true, "Scanning…");
+    localStorage.setItem("sageReady.comfyPath", comfy_path);
     hide(stepReady);
-    try {
-      const res = await fetch("/api/scan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ comfy_path }),
-      });
-      const data = await res.json();
-      if (!data.ok) {
-        show(stepReport);
-        summary.textContent = data.error || "Scan failed";
-        envLine.textContent = "";
-        renderChecks([
-          {
-            id: "error",
-            title: "Could not scan",
-            status: "fail",
-            detail: data.error || "Unknown error",
-            fix_hint: "Check that the path points at a ComfyUI folder with main.py.",
-          },
-        ]);
-        return;
-      }
+    shell.classList.remove("ready-mode");
 
+    const res = await fetch("/api/scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ comfy_path }),
+    });
+    if (!res.ok) {
+      throw new Error(`Scan failed (HTTP ${res.status})`);
+    }
+    const data = await res.json();
+    lastScan = data;
+    if (!data.ok) {
       show(stepReport);
-      summary.textContent = data.summary;
-      const env = data.env || {};
-      envLine.textContent = [
-        env.environment_type && `Env: ${env.environment_type}`,
-        env.python_version && `Python ${env.python_version}`,
-        env.torch_version && `Torch ${env.torch_version}`,
-        env.gpu_name,
-      ]
-        .filter(Boolean)
-        .join(" · ");
+      summary.textContent = data.error || "Scan failed";
+      envLine.textContent = "";
+      renderChecks([
+        {
+          id: "error",
+          title: "Could not scan",
+          status: "fail",
+          detail: data.error || "Unknown error",
+          fix_hint:
+            "Check that the path points at a ComfyUI folder with main.py.",
+        },
+      ]);
+      return data;
+    }
 
-      renderChecks(data.checks || []);
+    show(stepReport);
+    summary.textContent = data.summary;
+    envLine.textContent = formatEnv(data.env);
+    renderChecks(data.checks || []);
+    btnFix.textContent = DEFAULT_BUTTONS.fix;
 
-      const needsFix = (data.checks || []).some(
-        (c) => c.status === "fail" || (c.id === "sageattention" && c.status === "warn")
-      );
-      btnFix.textContent = needsFix ? "Install & Fix" : "Reinstall";
-      btnFix.style.display = "";
+    if (data.ready) {
+      await showReady(comfy_path, data.summary);
+    }
+    return data;
+  }
 
-      if (data.ready) {
-        await showReady(comfy_path, data);
-      }
+  async function scan() {
+    setBusy(true, btnScan, "Scanning…");
+    try {
+      await performScan();
     } catch (err) {
       show(stepReport);
-      summary.textContent = String(err);
-      renderChecks([]);
+      summary.textContent = friendlyError(err);
+      envLine.textContent = "";
+      renderChecks([
+        {
+          id: "error",
+          title: "Scan interrupted",
+          status: "fail",
+          detail: friendlyError(err),
+          fix_hint: "Confirm Sage Ready is running, then try Scan again.",
+        },
+      ]);
     } finally {
       setBusy(false);
     }
@@ -151,9 +214,13 @@
       await scan();
       if (!lastPath) return;
     }
-    setBusy(true, mode === "repair" ? "Repairing…" : "Installing…");
+    const btn = mode === "repair" ? btnRepair : btnFix;
+    const label = mode === "repair" ? "Repairing…" : "Installing…";
+    setBusy(true, btn, label);
     logOutput.textContent = "";
     logPanel.open = true;
+    hide(stepReady);
+    shell.classList.remove("ready-mode");
 
     try {
       const res = await fetch("/api/install", {
@@ -161,10 +228,15 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ comfy_path: lastPath, mode }),
       });
+      if (!res.ok) {
+        throw new Error(`Install failed (HTTP ${res.status})`);
+      }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let installOk = false;
+      let installError = "";
 
       while (true) {
         const { value, done } = await reader.read();
@@ -189,39 +261,44 @@
             logOutput.textContent += `${evt.line}\n`;
             logOutput.scrollTop = logOutput.scrollHeight;
           } else if (evt.type === "result") {
-            if (!evt.ok) {
-              summary.textContent = evt.error || "Install failed";
-            }
+            installOk = !!evt.ok;
+            if (!evt.ok) installError = evt.error || "Install failed";
           }
         }
       }
 
-      await scan();
-      const verifyRes = await fetch("/api/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ comfy_path: lastPath }),
-      });
-      const verifyData = await verifyRes.json();
-      if (verifyData.ok) {
-        await showReady(lastPath, { summary: verifyData.detail });
-      } else if (!verifyData.skipped) {
-        summary.textContent =
-          verifyData.detail ||
-          verifyData.error ||
-          "Install finished, but kernel verification did not pass.";
+      if (!installOk && installError) {
+        summary.textContent = installError;
+      }
+
+      if (activeBusyBtn) activeBusyBtn.textContent = "Re-scanning…";
+      const data = await performScan();
+      if (data && data.ok) {
+        if (!data.ready && !installOk) {
+          summary.textContent =
+            installError ||
+            data.summary ||
+            "Install finished with issues — see the checklist.";
+        }
+      } else if (!data) {
+        summary.textContent = installError || "Re-scan failed";
+      } else if (!data.ok) {
+        summary.textContent = data.error || installError || "Re-scan failed";
       }
     } catch (err) {
-      summary.textContent = String(err);
-      logOutput.textContent += `\n${err}\n`;
+      summary.textContent = friendlyError(err);
+      logOutput.textContent += `\n${friendlyError(err)}\n`;
     } finally {
       setBusy(false);
     }
   }
 
   async function verifyOnly() {
-    if (!lastPath) return;
-    setBusy(true, "Verifying…");
+    if (!lastPath) {
+      setPathError("Scan a ComfyUI folder first.");
+      return;
+    }
+    setBusy(true, btnVerify, "Testing…");
     try {
       const res = await fetch("/api/verify", {
         method: "POST",
@@ -229,24 +306,30 @@
         body: JSON.stringify({ comfy_path: lastPath }),
       });
       const data = await res.json();
-      if (data.ok) {
-        await showReady(lastPath, { summary: data.detail });
-      } else {
-        summary.textContent = data.detail || data.error || "Verification failed";
-        await scan();
+      // Re-scan so Ready is only from the full checklist — never from verify alone
+      if (activeBusyBtn) activeBusyBtn.textContent = "Re-scanning…";
+      await performScan();
+      if (!data.ok && !data.skipped) {
+        summary.textContent =
+          data.detail || data.error || "GPU attention test did not pass.";
+      } else if (data.skipped) {
+        summary.textContent =
+          data.detail ||
+          "GPU test skipped — Ready cannot complete without an NVIDIA GPU.";
       }
     } catch (err) {
-      summary.textContent = String(err);
+      summary.textContent = friendlyError(err);
     } finally {
       setBusy(false);
     }
   }
 
-  async function showReady(comfy_path, scanData) {
+  async function showReady(comfy_path, summaryText) {
     show(stepReady);
-    if (scanData && scanData.summary) {
-      readyCopy.textContent = scanData.summary;
-    }
+    shell.classList.add("ready-mode");
+    readyCopy.textContent =
+      summaryText ||
+      "SageAttention imports cleanly, and a live GPU test matched PyTorch’s built-in attention. Restart ComfyUI with the command below.";
     try {
       const res = await fetch("/api/launch-command", {
         method: "POST",
@@ -256,12 +339,33 @@
       const data = await res.json();
       if (data.ok) {
         launchCmd.textContent = data.command;
-        helperHint.textContent = data.helper_script
-          ? `Helper script written: ${data.helper_script}`
-          : "";
       }
     } catch {
       launchCmd.textContent = "python main.py --use-sage-attention";
+    }
+    helperHint.textContent =
+      "ComfyUI must be started with --use-sage-attention or SageAttention will not be used. Fully restart ComfyUI if it was already open. Optional: save a helper script next to main.py.";
+  }
+
+  async function saveHelper() {
+    if (!lastPath) return;
+    setBusy(true, btnHelper, "Saving…");
+    try {
+      const res = await fetch("/api/write-helper", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comfy_path: lastPath }),
+      });
+      const data = await res.json();
+      if (data.ok && data.helper_script) {
+        helperHint.textContent = `Shortcut saved: ${data.helper_script} — run it so ComfyUI starts with SageAttention enabled. Restart ComfyUI if it was already open.`;
+      } else {
+        helperHint.textContent = data.detail || "Could not write helper script.";
+      }
+    } catch (err) {
+      helperHint.textContent = friendlyError(err);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -269,11 +373,14 @@
   pathInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") scan();
   });
+  pathInput.addEventListener("input", () => setPathError(""));
   btnFix.addEventListener("click", () => runInstall("install"));
   btnRepair.addEventListener("click", () => runInstall("repair"));
   btnVerify.addEventListener("click", verifyOnly);
+  btnHelper.addEventListener("click", saveHelper);
   btnRescan.addEventListener("click", () => {
     hide(stepReady);
+    shell.classList.remove("ready-mode");
     scan();
   });
   btnCopy.addEventListener("click", async () => {
@@ -285,14 +392,18 @@
         btnCopy.textContent = "Copy";
       }, 1200);
     } catch {
-      btnCopy.textContent = "Select & copy";
+      const range = document.createRange();
+      range.selectNodeContents(launchCmd);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      btnCopy.textContent = "Selected";
+      setTimeout(() => {
+        btnCopy.textContent = "Copy";
+      }, 1500);
     }
   });
 
-  // Restore last path
   const saved = localStorage.getItem("sageReady.comfyPath");
   if (saved) pathInput.value = saved;
-  pathInput.addEventListener("change", () => {
-    localStorage.setItem("sageReady.comfyPath", pathInput.value.trim());
-  });
 })();

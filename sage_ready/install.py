@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import subprocess
+import threading
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Optional
 
-from .detect import resolve_environment
+from .detect import resolve_environment, run_probe
 from .models import EnvSnapshot, WheelPlan
-from .wheels import load_matrix, plan_install
+from .wheels import is_allowed_wheel_url, load_matrix, needs_version_upgrade, plan_install
 
 LogFn = Callable[[str], None]
+_install_lock = threading.Lock()
 
 
 def _pip_cmd(python_path: str, *args: str) -> list[str]:
@@ -22,7 +24,6 @@ def stream_command(
     cmd: list[str],
     log: Optional[LogFn] = None,
 ) -> Iterator[str]:
-    """Run a command and yield stdout/stderr lines."""
     if log:
         log(f"$ {' '.join(cmd)}")
     proc = subprocess.Popen(
@@ -58,8 +59,36 @@ def planned_actions(env: EnvSnapshot, plan: WheelPlan, mode: str) -> list[str]:
     else:
         actions.append(f"SageAttention fallback: {plan.package_spec}")
     if force:
-        actions.append("Mode: repair (force-reinstall)")
+        actions.append("Mode: repair (force-reinstall into ComfyUI’s Python)")
     return actions
+
+
+def _ensure_pip(python: str, log: LogFn) -> None:
+    probe = subprocess.run(
+        [python, "-m", "pip", "--version"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    if probe.returncode == 0:
+        log(f"pip OK: {probe.stdout.strip()}")
+        return
+    log("pip is missing — trying ensurepip …")
+    ensure = subprocess.run(
+        [python, "-m", "ensurepip", "--upgrade"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    if ensure.returncode != 0:
+        raise RuntimeError(
+            "This ComfyUI Python has no working pip. "
+            "For portable installs, repair python_embeded or run get-pip.py inside it.\n"
+            f"{ensure.stderr or ensure.stdout or probe.stderr}"
+        )
+    log("ensurepip finished")
 
 
 def install_stack(
@@ -68,21 +97,51 @@ def install_stack(
     dry_run: bool = False,
     log: Optional[LogFn] = None,
 ) -> dict:
-    """Install or repair Triton + SageAttention. Returns result dict."""
     def emit(msg: str) -> None:
         if log:
             log(msg)
 
+    if not _install_lock.acquire(blocking=False):
+        raise RuntimeError("Another install is already running. Wait for it to finish.")
+
+    try:
+        return _install_stack_locked(comfy_path, mode, dry_run, emit)
+    finally:
+        _install_lock.release()
+
+
+def _install_stack_locked(
+    comfy_path: str,
+    mode: str,
+    dry_run: bool,
+    emit: LogFn,
+) -> dict:
     env = resolve_environment(comfy_path)
     if not env.python_path:
-        raise RuntimeError("No ComfyUI Python resolved")
+        raise RuntimeError("No ComfyUI Python found")
+    if env.python_is_fallback:
+        emit(
+            "WARNING: Using a fallback Python (not portable/venv). "
+            "Packages may not be visible to ComfyUI."
+        )
     if not env.torch_version or not env.torch_cuda_available:
         raise RuntimeError(
-            "CUDA-enabled PyTorch is required in the ComfyUI Python before installing SageAttention."
+            "CUDA-enabled PyTorch is required in ComfyUI’s Python before installing SageAttention."
         )
 
     plan = plan_install(env)
-    actions = planned_actions(env, plan, mode)
+
+    # Auto-upgrade to repair when version/location needs force
+    effective_mode = mode
+    if mode == "install" and (
+        needs_version_upgrade(env, plan)
+        or is_known_bad_needs_force(env)
+        or env.needs_repair
+    ):
+        effective_mode = "repair"
+        emit("Switching to repair mode so the recommended wheel replaces the current install.")
+
+    actions = planned_actions(env, plan, effective_mode)
     emit("Install plan:")
     for action in actions:
         emit(f"  • {action}")
@@ -97,33 +156,42 @@ def install_stack(
             "env": env.model_dump(),
         }
 
+    if plan.strategy == "wheel" and plan.wheel_url and not is_allowed_wheel_url(plan.wheel_url):
+        raise RuntimeError(
+            "Refusing to download wheel from an unexpected URL. "
+            "Only official woct0rdho SageAttention release URLs are allowed."
+        )
+
     python = env.python_path
-    force = mode == "repair"
+    force = effective_mode == "repair"
     logs: list[str] = []
 
     def collect(msg: str) -> None:
         logs.append(msg)
         emit(msg)
 
-    # Ensure pip is usable
-    for line in stream_command(
-        _pip_cmd(python, "install", "--upgrade", "pip", "setuptools", "wheel"),
-        log=collect,
-    ):
-        pass
+    _ensure_pip(python, collect)
 
-    # Triton
+    # Mild pip tooling refresh — skip aggressive self-upgrade failures
+    try:
+        for _ in stream_command(
+            _pip_cmd(python, "install", "--upgrade", "setuptools", "wheel"),
+            log=collect,
+        ):
+            pass
+    except RuntimeError as exc:
+        collect(f"setuptools/wheel upgrade skipped: {exc}")
+
     triton_spec = f"{plan.triton_package}{plan.triton_constraint}"
     triton_args = ["install"]
     if force:
         triton_args.append("--force-reinstall")
-    triton_args.extend([triton_spec])
+    triton_args.append(triton_spec)
     collect(f"Installing {triton_spec} …")
     try:
         for _ in stream_command(_pip_cmd(python, *triton_args), log=collect):
             pass
     except RuntimeError as exc:
-        # On Linux, plain triton may already satisfy; try unconstrained once
         if plan.triton_package == "triton":
             collect(f"Constrained Triton install failed ({exc}); retrying unconstrained …")
             retry = ["install"]
@@ -132,13 +200,36 @@ def install_stack(
             retry.append("triton")
             for _ in stream_command(_pip_cmd(python, *retry), log=collect):
                 pass
+        elif plan.triton_package == "triton-windows":
+            collect(f"Constrained triton-windows failed ({exc}); retrying unconstrained …")
+            retry = ["install"]
+            if force:
+                retry.append("--force-reinstall")
+            retry.append("triton-windows")
+            for _ in stream_command(_pip_cmd(python, *retry), log=collect):
+                pass
         else:
             raise
 
-    # SageAttention
+    # Confirm triton import
+    triton_check = subprocess.run(
+        [python, "-c", "import triton; print(getattr(triton, '__version__', 'ok'))"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    if triton_check.returncode != 0:
+        raise RuntimeError(
+            "Triton installed but still does not import. "
+            "On Windows, confirm Visual C++ redistributables are installed.\n"
+            f"{triton_check.stderr or triton_check.stdout}"
+        )
+    collect(f"Triton import OK ({triton_check.stdout.strip()})")
+
     sage_installed = None
     if plan.strategy == "wheel" and plan.wheel_url:
-        collect(f"Installing SageAttention from wheel …")
+        collect("Installing SageAttention from the official prebuilt wheel …")
         args = ["install"]
         if force:
             args.append("--force-reinstall")
@@ -157,9 +248,9 @@ def install_stack(
                 pass
             sage_installed = "2.2.0"
         except RuntimeError as exc:
-            collect(f"SA 2.2.0 install failed: {exc}")
+            collect(f"SageAttention 2.2.0 build/install failed: {exc}")
             fallback = load_matrix()["fallback_pypi"]
-            collect(f"Falling back to {fallback} …")
+            collect(f"Falling back to {fallback} (slower, usually works without compiling) …")
             args = ["install"]
             if force:
                 args.append("--force-reinstall")
@@ -177,7 +268,6 @@ def install_stack(
             pass
         sage_installed = plan.sage_version
 
-    # Quick import confirmation
     confirm = subprocess.run(
         [
             python,
@@ -192,16 +282,26 @@ def install_stack(
     )
     if confirm.returncode != 0:
         raise RuntimeError(
-            "Install finished but import still fails:\n"
+            "Install finished but SageAttention still does not import in ComfyUI’s Python:\n"
             f"{confirm.stderr or confirm.stdout}"
         )
     installed_ver = confirm.stdout.strip() or sage_installed
     collect(f"Import OK — sageattention {installed_ver}")
 
+    # Refresh location sanity
+    try:
+        probe = run_probe(Path(python))
+        loc = probe.get("sageattention_location")
+        if loc:
+            collect(f"Package location: {loc}")
+    except Exception as exc:  # noqa: BLE001
+        collect(f"Post-install probe note: {exc}")
+
     return {
         "ok": True,
         "dry_run": False,
         "actions": actions,
+        "mode": effective_mode,
         "sage_version": installed_ver,
         "plan": plan.model_dump(),
         "env": {
@@ -213,22 +313,30 @@ def install_stack(
     }
 
 
+def is_known_bad_needs_force(env: EnvSnapshot) -> bool:
+    from .wheels import is_known_bad_version
+
+    return is_known_bad_version(env.sageattention_version)
+
+
 def write_launch_helper(comfy_path: str) -> Optional[str]:
-    """Create a helper launch script with --use-sage-attention if missing."""
+    """Create a helper launch script with --use-sage-attention."""
     env = resolve_environment(comfy_path)
     root = Path(env.comfy_path)
     if env.platform.startswith("win"):
         path = root / "run_sage_attention.bat"
         py = env.python_path or "python"
         content = (
-            "@echo off\n"
-            f'"{py}" "{root / "main.py"}" --use-sage-attention %*\n'
+            "@echo off\r\n"
+            "echo Starting ComfyUI with SageAttention enabled...\r\n"
+            f'"{py}" "{root / "main.py"}" --use-sage-attention %*\r\n'
         )
     else:
         path = root / "run_sage_attention.sh"
         py = env.python_path or "python"
         content = (
             "#!/usr/bin/env bash\n"
+            "echo 'Starting ComfyUI with SageAttention enabled...'\n"
             f'exec "{py}" "{root / "main.py"}" --use-sage-attention "$@"\n'
         )
     path.write_text(content, encoding="utf-8")

@@ -87,7 +87,16 @@ def verify(req: PathRequest) -> VerifyResponse:
 def api_launch_command(req: PathRequest) -> dict[str, Any]:
     try:
         cmd = launch_command(req.comfy_path)
+        return {"ok": True, "command": cmd, "helper_script": None}
+    except (OSError, RuntimeError, FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/write-helper")
+def api_write_helper(req: PathRequest) -> dict[str, Any]:
+    try:
         helper = write_launch_helper(req.comfy_path)
+        cmd = launch_command(req.comfy_path)
         return {"ok": True, "command": cmd, "helper_script": helper}
     except (OSError, RuntimeError, FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -120,12 +129,12 @@ async def install(req: InstallRequest) -> StreamingResponse:
     thread.start()
 
     async def event_stream():
+        # Keepalive-friendly headers applied on response
         while True:
             try:
                 item = await asyncio.to_thread(queue.get, True, 0.5)
             except Empty:
                 if not thread.is_alive():
-                    # Drain anything left, then stop
                     while True:
                         try:
                             item = queue.get_nowait()
@@ -134,12 +143,22 @@ async def install(req: InstallRequest) -> StreamingResponse:
                         if item is None:
                             return
                         yield f"data: {item}\n\n"
+                else:
+                    yield ": keepalive\n\n"
                 continue
             if item is None:
                 break
             yield f"data: {item}\n\n"
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/")
@@ -156,6 +175,12 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
+
+    if args.host not in {"127.0.0.1", "localhost", "::1"}:
+        print(
+            "WARNING: Binding outside localhost lets other machines trigger installs "
+            "on this PC. Prefer --host 127.0.0.1 unless you trust the network."
+        )
 
     url = f"http://{args.host}:{args.port}"
     if not args.no_browser:

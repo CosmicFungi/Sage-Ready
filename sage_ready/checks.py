@@ -7,42 +7,14 @@ import subprocess
 from pathlib import Path
 
 from .detect import resolve_environment, run_probe
+from .kernel import KERNEL_SCRIPT
 from .models import CheckItem, CheckStatus, EnvSnapshot, ScanResponse, WheelPlan
-from .wheels import is_known_bad_version, plan_install
-
-KERNEL_PROBE = r"""
-import json, sys
-result = {"ok": False, "skipped": False, "cosine": None, "dtype": None, "detail": ""}
-try:
-    import torch
-    from sageattention import sageattn
-    if not torch.cuda.is_available():
-        result["skipped"] = True
-        result["detail"] = "No CUDA device available for kernel test"
-        print(json.dumps(result))
-        sys.exit(0)
-    torch.manual_seed(0)
-    device = "cuda"
-    dtype = torch.float16 if torch.cuda.is_bf16_supported() is False else torch.float16
-    # Prefer fp16 for broadest kernel support
-    B, H, S, D = 1, 4, 128, 64
-    q = torch.randn(B, H, S, D, device=device, dtype=dtype)
-    k = torch.randn(B, H, S, D, device=device, dtype=dtype)
-    v = torch.randn(B, H, S, D, device=device, dtype=dtype)
-    with torch.no_grad():
-        out_sage = sageattn(q, k, v, tensor_layout="HND", is_causal=False)
-        out_sdpa = torch.nn.functional.scaled_dot_product_attention(q, k, v, is_causal=False)
-    a = out_sage.reshape(-1).float()
-    b = out_sdpa.reshape(-1).float()
-    cosine = torch.nn.functional.cosine_similarity(a.unsqueeze(0), b.unsqueeze(0)).item()
-    result["ok"] = cosine >= 0.99
-    result["cosine"] = float(cosine)
-    result["dtype"] = str(dtype).replace("torch.", "")
-    result["detail"] = f"sageattn vs SDPA cosine={cosine:.5f} (need >= 0.99)"
-except Exception as e:
-    result["detail"] = f"{type(e).__name__}: {e}"
-print(json.dumps(result))
-"""
+from .wheels import (
+    is_known_bad_version,
+    needs_version_upgrade,
+    plan_install,
+    preferred_sa_version,
+)
 
 
 def _check(
@@ -55,10 +27,32 @@ def _check(
     return CheckItem(id=id_, title=title, status=status, detail=detail, fix_hint=fix_hint)
 
 
+def _norm(path: str) -> str:
+    return path.replace("\\", "/").lower()
+
+
+def package_in_target_env(location: str, env: EnvSnapshot) -> bool:
+    loc = _norm(location)
+    prefixes = []
+    if env.python_prefix:
+        prefixes.append(_norm(env.python_prefix))
+    if env.python_path:
+        py = Path(env.python_path)
+        prefixes.append(_norm(str(py.parent)))
+        prefixes.append(_norm(str(py.parent.parent)))
+    for sp in env.site_packages:
+        prefixes.append(_norm(sp))
+    # Must live under prefix or an explicit site-packages from the probe
+    for prefix in prefixes:
+        if prefix and (loc.startswith(prefix.rstrip("/") + "/") or loc.startswith(prefix)):
+            # Reject obvious foreign user-site if prefix is portable and path is roaming
+            return True
+    return False
+
+
 def build_checks(env: EnvSnapshot, plan: WheelPlan, probe: dict | None = None) -> list[CheckItem]:
     checks: list[CheckItem] = []
 
-    # ComfyUI root
     if env.main_py and Path(env.main_py).is_file():
         checks.append(
             _check(
@@ -75,32 +69,47 @@ def build_checks(env: EnvSnapshot, plan: WheelPlan, probe: dict | None = None) -
                 "ComfyUI folder",
                 CheckStatus.FAIL,
                 "main.py not found",
-                "Select the ComfyUI directory that contains main.py.",
+                "Select the ComfyUI directory that contains main.py "
+                "(portable root or the inner ComfyUI folder both work).",
             )
         )
 
-    # Interpreter
     if env.python_path and Path(env.python_path).exists():
-        checks.append(
-            _check(
-                "python",
-                "ComfyUI Python",
-                CheckStatus.OK,
-                f"{env.environment_type}: {env.python_path} (Python {env.python_version})",
+        if env.python_is_fallback:
+            checks.append(
+                _check(
+                    "python",
+                    "ComfyUI Python",
+                    CheckStatus.WARN,
+                    (
+                        f"Using {env.environment_type}: {env.python_path} "
+                        f"(Python {env.python_version}). "
+                        "This is not ComfyUI’s portable/venv Python — "
+                        "packages may install into the wrong place."
+                    ),
+                    "Prefer ComfyUI portable (python_embeded) or a .venv inside the ComfyUI folder.",
+                )
             )
-        )
+        else:
+            checks.append(
+                _check(
+                    "python",
+                    "ComfyUI Python",
+                    CheckStatus.OK,
+                    f"{env.environment_type}: {env.python_path} (Python {env.python_version})",
+                )
+            )
     else:
         checks.append(
             _check(
                 "python",
                 "ComfyUI Python",
                 CheckStatus.FAIL,
-                "No interpreter resolved",
+                "No interpreter found for this ComfyUI folder",
                 "Use ComfyUI portable (python_embeded) or create a .venv inside ComfyUI.",
             )
         )
 
-    # GPU / driver
     if env.gpu_name or env.driver_version:
         checks.append(
             _check(
@@ -117,20 +126,20 @@ def build_checks(env: EnvSnapshot, plan: WheelPlan, probe: dict | None = None) -
                 "nvidia_gpu",
                 "NVIDIA GPU",
                 CheckStatus.FAIL,
-                "nvidia-smi did not report a GPU",
-                "Install NVIDIA drivers and confirm nvidia-smi works in a terminal.",
+                "No NVIDIA GPU reported by nvidia-smi",
+                "Install current NVIDIA drivers and confirm nvidia-smi works in a terminal.",
             )
         )
 
-    # Torch + CUDA
     if not env.torch_version:
         checks.append(
             _check(
                 "torch",
                 "PyTorch (CUDA)",
                 CheckStatus.FAIL,
-                "torch is not installed in this Python",
-                "Install a CUDA build of PyTorch into your ComfyUI Python, then scan again.",
+                "PyTorch is not installed in this Python",
+                "Install a CUDA build of PyTorch into ComfyUI’s Python "
+                "(not a CPU-only `pip install torch`), then scan again.",
             )
         )
     elif not env.torch_cuda_available:
@@ -139,8 +148,9 @@ def build_checks(env: EnvSnapshot, plan: WheelPlan, probe: dict | None = None) -
                 "torch",
                 "PyTorch (CUDA)",
                 CheckStatus.FAIL,
-                f"torch {env.torch_version} found but CUDA is not available",
-                "Reinstall a CUDA-enabled PyTorch wheel matching your GPU driver.",
+                f"PyTorch {env.torch_version} is present but CUDA is not available "
+                "(CPU builds cannot run SageAttention).",
+                "Reinstall a CUDA-enabled PyTorch wheel that matches your GPU driver.",
             )
         )
     else:
@@ -153,12 +163,11 @@ def build_checks(env: EnvSnapshot, plan: WheelPlan, probe: dict | None = None) -
             )
         )
 
-    # Wheel plan
     if plan.strategy == "wheel":
         checks.append(
             _check(
                 "wheel_match",
-                "Compatible SageAttention wheel",
+                "Compatible SageAttention package",
                 CheckStatus.OK,
                 plan.notes,
             )
@@ -167,24 +176,24 @@ def build_checks(env: EnvSnapshot, plan: WheelPlan, probe: dict | None = None) -
         checks.append(
             _check(
                 "wheel_match",
-                "Compatible SageAttention wheel",
+                "Compatible SageAttention package",
                 CheckStatus.WARN,
                 plan.notes,
-                "On Linux, build tools / CUDA toolkit may be required for SageAttention 2.x.",
+                "If the install log shows compiler errors, keep the 1.0.6 fallback "
+                "or install the CUDA toolkit, then Repair.",
             )
         )
     else:
         checks.append(
             _check(
                 "wheel_match",
-                "Compatible SageAttention wheel",
+                "Compatible SageAttention package",
                 CheckStatus.WARN,
                 plan.notes,
-                "Install & Fix will use SageAttention 1.0.6 fallback, or upgrade Torch/CUDA for SA2.",
+                "Upgrade PyTorch/CUDA for SageAttention 2.x, or continue with the 1.0.6 fallback.",
             )
         )
 
-    # Triton
     if env.triton_version:
         checks.append(
             _check(
@@ -200,12 +209,12 @@ def build_checks(env: EnvSnapshot, plan: WheelPlan, probe: dict | None = None) -
                 "triton",
                 "Triton",
                 CheckStatus.FAIL,
-                "Triton is not importable in ComfyUI Python",
-                "Click Install & Fix to install a Torch-compatible Triton package.",
+                "Triton is not available in ComfyUI’s Python",
+                "SageAttention 2.x needs Triton. Click Install & Fix "
+                "(uses triton-windows on Windows).",
             )
         )
 
-    # SageAttention import
     sage_ok = False
     sage_detail = ""
     if probe is not None:
@@ -213,16 +222,17 @@ def build_checks(env: EnvSnapshot, plan: WheelPlan, probe: dict | None = None) -
         if sage_ok:
             loc = probe.get("sageattention_location") or env.sageattention_location or ""
             ver = env.sageattention_version or "unknown"
-            sage_detail = f"from sageattention import sageattn OK · {ver}"
+            sage_detail = f"Import OK · {ver}"
             if loc:
                 sage_detail += f" · {loc}"
         else:
-            sage_detail = probe.get("sage_error") or "sageattention import failed"
+            err = probe.get("sage_error") or "SageAttention import failed"
+            sage_detail = err
     elif env.sageattention_version and env.sageattention_location:
         sage_ok = True
         sage_detail = f"{env.sageattention_version} · {env.sageattention_location}"
     else:
-        sage_detail = "sageattention not installed or import failed"
+        sage_detail = "SageAttention is not installed (or import failed) in ComfyUI’s Python"
 
     if sage_ok:
         status = CheckStatus.OK
@@ -230,10 +240,17 @@ def build_checks(env: EnvSnapshot, plan: WheelPlan, probe: dict | None = None) -
         if is_known_bad_version(env.sageattention_version):
             status = CheckStatus.WARN
             fix = (
-                "This build (post5) can produce black/noise outputs. "
-                "Click Repair to upgrade to post6."
+                "This SageAttention build is known to produce black or noisy images in ComfyUI. "
+                f"Click Repair to upgrade to a safer build ({preferred_sa_version()}+)."
             )
             sage_detail += " · known problematic build"
+        elif needs_version_upgrade(env, plan):
+            status = CheckStatus.WARN
+            fix = (
+                f"A better match is available ({plan.sage_version}). "
+                "Click Repair to upgrade before using ComfyUI nodes."
+            )
+            sage_detail += f" · upgrade available → {plan.sage_version}"
         checks.append(
             _check("sageattention", "SageAttention import", status, sage_detail, fix)
         )
@@ -244,22 +261,50 @@ def build_checks(env: EnvSnapshot, plan: WheelPlan, probe: dict | None = None) -
                 "SageAttention import",
                 CheckStatus.FAIL,
                 sage_detail,
-                "Click Install & Fix to install SageAttention into this exact Python.",
+                "Click Install & Fix to install SageAttention into this exact ComfyUI Python.",
             )
         )
 
-    # Package location sanity
+    # Version preference explicit check when import works
+    if sage_ok and plan.strategy == "wheel":
+        if needs_version_upgrade(env, plan) or is_known_bad_version(env.sageattention_version):
+            checks.append(
+                _check(
+                    "sa_version",
+                    "SageAttention version",
+                    CheckStatus.WARN,
+                    (
+                        f"Installed {env.sageattention_version or 'unknown'}; "
+                        f"recommended for your stack: {plan.sage_version}."
+                    ),
+                    "Click Repair so ComfyUI nodes use the recommended wheel.",
+                )
+            )
+        else:
+            checks.append(
+                _check(
+                    "sa_version",
+                    "SageAttention version",
+                    CheckStatus.OK,
+                    f"{env.sageattention_version} matches the recommended wheel plan.",
+                )
+            )
+    else:
+        checks.append(
+            _check(
+                "sa_version",
+                "SageAttention version",
+                CheckStatus.SKIP,
+                "Checked after SageAttention imports successfully.",
+            )
+        )
+
     if env.sageattention_location and env.python_path:
-        loc = env.sageattention_location.replace("\\", "/").lower()
-        py = env.python_path.replace("\\", "/").lower()
-        # Heuristic: portable/venv packages should live near the interpreter prefix
-        prefix = str(Path(env.python_path).parent).replace("\\", "/").lower()
-        parent_prefix = str(Path(env.python_path).parent.parent).replace("\\", "/").lower()
-        if prefix in loc or parent_prefix in loc or "site-packages" in loc:
+        if package_in_target_env(env.sageattention_location, env):
             checks.append(
                 _check(
                     "package_location",
-                    "Installed into ComfyUI env",
+                    "Installed into ComfyUI’s Python",
                     CheckStatus.OK,
                     env.sageattention_location,
                 )
@@ -268,29 +313,32 @@ def build_checks(env: EnvSnapshot, plan: WheelPlan, probe: dict | None = None) -
             checks.append(
                 _check(
                     "package_location",
-                    "Installed into ComfyUI env",
-                    CheckStatus.WARN,
-                    f"Package path looks unusual for {env.python_path}: {env.sageattention_location}",
-                    "Use Repair to force-reinstall into the resolved ComfyUI Python.",
+                    "Installed into ComfyUI’s Python",
+                    CheckStatus.FAIL,
+                    (
+                        f"SageAttention was found at {env.sageattention_location}, "
+                        f"which does not look like ComfyUI’s Python ({env.python_path}). "
+                        "This is the most common cause of “module not found” in ComfyUI."
+                    ),
+                    "Click Repair to force-reinstall into the resolved ComfyUI Python.",
                 )
             )
     else:
         checks.append(
             _check(
                 "package_location",
-                "Installed into ComfyUI env",
+                "Installed into ComfyUI’s Python",
                 CheckStatus.SKIP,
-                "Cannot verify package location until sageattention imports.",
+                "Checked after SageAttention imports successfully.",
                 "Install & Fix, then scan again.",
             )
         )
 
-    # Launch flag
     if env.has_use_sage_flag:
         checks.append(
             _check(
                 "launch_flag",
-                "ComfyUI --use-sage-attention",
+                "ComfyUI launch flag",
                 CheckStatus.OK,
                 "A launch script already includes --use-sage-attention",
             )
@@ -299,10 +347,11 @@ def build_checks(env: EnvSnapshot, plan: WheelPlan, probe: dict | None = None) -
         checks.append(
             _check(
                 "launch_flag",
-                "ComfyUI --use-sage-attention",
+                "ComfyUI launch flag",
                 CheckStatus.WARN,
-                "No launch script found with --use-sage-attention",
-                "After Ready, start ComfyUI with: python main.py --use-sage-attention",
+                "ComfyUI will not use SageAttention unless you start it with --use-sage-attention.",
+                "When you reach Ready, copy the launch command or use the helper script "
+                "in your ComfyUI folder. Restart ComfyUI if it is already open.",
             )
         )
 
@@ -312,7 +361,7 @@ def build_checks(env: EnvSnapshot, plan: WheelPlan, probe: dict | None = None) -
 def run_kernel_check(python_path: str) -> CheckItem:
     try:
         result = subprocess.run(
-            [python_path, "-c", KERNEL_PROBE],
+            [python_path, "-c", KERNEL_SCRIPT],
             capture_output=True,
             text=True,
             timeout=180,
@@ -321,15 +370,15 @@ def run_kernel_check(python_path: str) -> CheckItem:
     except subprocess.TimeoutExpired:
         return _check(
             "kernel_test",
-            "Attention kernel smoke test",
+            "GPU attention test",
             CheckStatus.FAIL,
-            "Kernel test timed out",
-            "Check GPU drivers and try Repair, then Verify again.",
+            "GPU attention test timed out",
+            "Check GPU drivers, click Repair, then Test GPU again.",
         )
     except OSError as exc:
         return _check(
             "kernel_test",
-            "Attention kernel smoke test",
+            "GPU attention test",
             CheckStatus.FAIL,
             str(exc),
             "Confirm the ComfyUI Python path is correct.",
@@ -339,38 +388,38 @@ def run_kernel_check(python_path: str) -> CheckItem:
     if not lines:
         return _check(
             "kernel_test",
-            "Attention kernel smoke test",
+            "GPU attention test",
             CheckStatus.FAIL,
-            result.stderr or result.stdout or "No result from kernel probe",
-            "Click Install & Fix, then Verify.",
+            result.stderr or result.stdout or "No result from GPU attention test",
+            "Click Install & Fix, then Test GPU.",
         )
 
     data = json.loads(lines[-1])
     if data.get("skipped"):
         return _check(
             "kernel_test",
-            "Attention kernel smoke test",
+            "GPU attention test",
             CheckStatus.SKIP,
-            data.get("detail") or "Skipped",
-            "Connect an NVIDIA GPU to run the full readiness proof.",
+            data.get("detail") or "Skipped — no GPU",
+            "Connect an NVIDIA GPU; Ready cannot complete without this test.",
         )
     if data.get("ok"):
         return _check(
             "kernel_test",
-            "Attention kernel smoke test",
+            "GPU attention test",
             CheckStatus.OK,
             data.get("detail") or "Passed",
         )
     return _check(
         "kernel_test",
-        "Attention kernel smoke test",
+        "GPU attention test",
         CheckStatus.FAIL,
-        data.get("detail") or "Kernel mismatch or error",
-        "Repair SageAttention (prefer 2.2.0.post6+) and verify again.",
+        data.get("detail") or "GPU attention test failed",
+        "Repair SageAttention (prefer 2.2.0.post6+), then Test GPU again.",
     )
 
 
-def summarize(checks: list[CheckItem]) -> tuple[bool, bool, str]:
+def summarize(checks: list[CheckItem], env: EnvSnapshot | None = None) -> tuple[bool, bool, str]:
     """Return (ready_for_install, ready, summary)."""
     by_id = {c.id: c for c in checks}
     blocking = ("comfy_root", "python", "torch")
@@ -378,22 +427,49 @@ def summarize(checks: list[CheckItem]) -> tuple[bool, bool, str]:
         i in by_id and by_id[i].status in (CheckStatus.OK, CheckStatus.WARN)
         for i in blocking
     )
-
-    # Ready requires import + kernel proof. launch_flag may stay WARN.
-    must_ok = ("comfy_root", "python", "torch", "triton", "sageattention", "kernel_test")
-    ready = all(
-        i in by_id and by_id[i].status == CheckStatus.OK
-        for i in must_ok
+    # python WARN (fallback) still allows install, but Ready requires OK python? 
+    # Keep ready requiring non-FAIL for python is enough if other checks OK —
+    # but wrong-env is dangerous. Block Ready when python is WARN fallback.
+    must_ok = (
+        "comfy_root",
+        "torch",
+        "triton",
+        "sageattention",
+        "package_location",
+        "kernel_test",
     )
+    ready = all(i in by_id and by_id[i].status == CheckStatus.OK for i in must_ok)
+    if ready:
+        py = by_id.get("python")
+        if py is None or py.status == CheckStatus.FAIL:
+            ready = False
+        if by_id.get("sa_version") and by_id["sa_version"].status == CheckStatus.WARN:
+            ready = False
+        if env and env.python_is_fallback:
+            ready = False
+
+    # Flag repair recommendation on env
+    needs_repair = any(
+        c.id in {"sageattention", "sa_version", "package_location"}
+        and c.status in (CheckStatus.WARN, CheckStatus.FAIL)
+        for c in checks
+    )
+    if env is not None:
+        env.needs_repair = needs_repair
 
     fails = [c for c in checks if c.status == CheckStatus.FAIL]
     warns = [c for c in checks if c.status == CheckStatus.WARN]
     if ready:
         summary = "SageAttention is installed and proven ready for ComfyUI."
     elif fails:
-        summary = f"{len(fails)} issue(s) need fixing before ComfyUI can use SageAttention."
+        summary = (
+            f"{len(fails)} issue(s) need fixing before ComfyUI can use SageAttention safely."
+        )
     elif warns:
-        summary = "Environment looks usable, but warnings remain — Repair recommended."
+        summary = (
+            "Almost ready — review the warnings below. "
+            "Use Repair if SageAttention is the wrong build or landed in the wrong Python."
+        )
     else:
         summary = "Scan complete."
 
@@ -411,7 +487,9 @@ def scan_environment(comfy_path: str, include_kernel: bool = True) -> ScanRespon
     if env.python_path:
         try:
             probe = run_probe(Path(env.python_path))
-            # Refresh sage fields from fresh probe
+            env.python_prefix = probe.get("prefix") or env.python_prefix
+            env.site_packages = [str(p) for p in (probe.get("site_packages") or [])]
+            env.pip_ok = bool(probe.get("pip_ok"))
             env.triton_version = probe.get("triton_version") or env.triton_version
             env.sageattention_version = (
                 probe.get("sageattention_version") or env.sageattention_version
@@ -429,24 +507,27 @@ def scan_environment(comfy_path: str, include_kernel: bool = True) -> ScanRespon
         except (RuntimeError, OSError, subprocess.TimeoutExpired):
             probe = None
 
+    # Refresh plan after probe may have filled torch versions
+    plan = plan_install(env)
     checks = build_checks(env, plan, probe=probe)
 
     if include_kernel and env.python_path and any(
-        c.id == "sageattention" and c.status in (CheckStatus.OK, CheckStatus.WARN) for c in checks
+        c.id == "sageattention" and c.status in (CheckStatus.OK, CheckStatus.WARN)
+        for c in checks
     ):
         checks.append(run_kernel_check(env.python_path))
     else:
         checks.append(
             _check(
                 "kernel_test",
-                "Attention kernel smoke test",
+                "GPU attention test",
                 CheckStatus.SKIP,
                 "Skipped until SageAttention imports successfully",
-                "Install & Fix first, then Verify.",
+                "Install & Fix first, then Test GPU.",
             )
         )
 
-    ready_for_install, ready, summary = summarize(checks)
+    ready_for_install, ready, summary = summarize(checks, env)
     return ScanResponse(
         ok=True,
         env=env,

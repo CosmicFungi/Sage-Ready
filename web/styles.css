@@ -196,6 +196,32 @@ body {
   background: var(--amber);
   color: #1c1404;
   font-size: 0.85rem;
+  width: auto;
+}
+
+.btn-secondary {
+  background: rgba(15, 74, 54, 0.12);
+  color: var(--pine-deep);
+}
+
+.form-error {
+  margin: 0.65rem 0 0;
+  color: var(--fail);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.form-error.hidden {
+  display: none;
+}
+
+.action-hint {
+  margin-top: 0.85rem;
+}
+
+#step-ready.is-focus #step-report,
+.shell.ready-mode #step-report {
+  opacity: 0.55;
 }
 
 .actions {

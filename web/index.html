@@ -15,7 +15,7 @@
     <header class="hero">
       <p class="brand">Sage Ready</p>
       <h1 class="headline">Make SageAttention safe for ComfyUI</h1>
-      <p class="lede">Point at your ComfyUI folder. We install into the right Python, then prove the attention kernel actually works.</p>
+      <p class="lede">Point at your ComfyUI folder. We install SageAttention into that install’s Python—not a random system one—then run a quick GPU test so ComfyUI won’t crash or spit out black frames.</p>
     </header>
 
     <section class="step" id="step-locate" data-step="locate">
@@ -25,7 +25,8 @@
         <input id="comfy-path" type="text" placeholder="C:\ComfyUI  or  /home/you/ComfyUI" autocomplete="off" spellcheck="false" />
         <button type="button" class="btn btn-primary" id="btn-scan">Scan</button>
       </div>
-      <p class="hint">Use the folder that contains <code>main.py</code>. Portable installs are detected via <code>python_embeded</code>.</p>
+      <p class="hint" id="path-hint">Choose the folder that contains <code>main.py</code> (portable root or the inner ComfyUI folder both work). We look for <code>python_embeded</code>—ComfyUI’s spelling—so packages go into the right Python.</p>
+      <p class="form-error hidden" id="path-error" role="alert"></p>
     </section>
 
     <section class="step hidden" id="step-report" data-step="report">
@@ -36,8 +37,9 @@
       <div class="actions">
         <button type="button" class="btn btn-primary" id="btn-fix">Install &amp; Fix</button>
         <button type="button" class="btn btn-ghost" id="btn-repair">Repair</button>
-        <button type="button" class="btn btn-ghost" id="btn-verify">Verify kernel</button>
+        <button type="button" class="btn btn-ghost" id="btn-verify">Test GPU</button>
       </div>
+      <p class="hint action-hint">Install &amp; Fix adds missing packages. Repair force-reinstalls into ComfyUI’s Python—use it for wrong-folder installs or black/noisy output.</p>
       <details class="log-panel" id="log-panel">
         <summary>Install log</summary>
         <pre id="log-output"></pre>
@@ -45,16 +47,17 @@
     </section>
 
     <section class="step hidden" id="step-ready" data-step="ready">
-      <div class="step-label">Ready</div>
+      <div class="step-label">Step 3 · Ready</div>
       <p class="ready-brand">Sage Ready</p>
       <h2 class="ready-title">SageAttention is ready for ComfyUI</h2>
-      <p class="ready-copy" id="ready-copy">Imports succeed and the GPU kernel matches PyTorch SDPA.</p>
+      <p class="ready-copy" id="ready-copy">SageAttention imports cleanly, and a live GPU test matched PyTorch’s built-in attention. Restart ComfyUI with the command below.</p>
       <div class="launch-box">
-        <span class="launch-label">Start ComfyUI with</span>
+        <span class="launch-label">Start ComfyUI with this flag</span>
         <code id="launch-cmd"></code>
         <button type="button" class="btn btn-small" id="btn-copy">Copy</button>
+        <button type="button" class="btn btn-small btn-secondary" id="btn-helper">Save helper script</button>
       </div>
-      <p class="hint" id="helper-hint"></p>
+      <p class="hint" id="helper-hint">ComfyUI must be started with <code>--use-sage-attention</code> or SageAttention will not be used. Fully restart ComfyUI if it was already open.</p>
       <button type="button" class="btn btn-ghost" id="btn-rescan">Scan again</button>
     </section>
   </main>
