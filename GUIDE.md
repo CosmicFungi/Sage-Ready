@@ -2,7 +2,20 @@
 
 One file for everything: install Sage Ready, run it, and use it to make **SageAttention** safe for **ComfyUI**.
 
-**Version:** 1.2.0
+**Version:** 1.2.0  
+**Mode:** local-only (will **not** start in Cursor Cloud / remote agents)
+
+---
+
+## 0. Local-only (important)
+
+Sage Ready refuses to run in Cursor Cloud so it cannot “see” a fake `/workspace/B:\...` path.
+
+- Starts only on your own PC
+- Binds only to `http://127.0.0.1:8765`
+- Scan/Install APIs return **403** on cloud/agent hosts
+
+If `py app.py` prints `Refusing to start on a cloud/agent host`, you are not on your ComfyUI machine — download the ZIP onto Windows and run it there.
 
 ---
 
@@ -10,7 +23,7 @@ One file for everything: install Sage Ready, run it, and use it to make **SageAt
 
 ### Requirements
 
-- Python 3.10+ (3.11/3.12 recommended)
+- Python 3.10+ (3.11/3.12 recommended) **on the same PC as ComfyUI**
 - An existing **ComfyUI** install (this app does not install ComfyUI)
 - NVIDIA GPU + drivers for a full “Ready” result
 - Internet access to download Triton / SageAttention wheels when you click Install & Fix

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sage Ready — local web app for ComfyUI SageAttention readiness."""
+"""Sage Ready — LOCAL web app for ComfyUI SageAttention readiness."""
 
 from __future__ import annotations
 
@@ -13,14 +13,21 @@ from queue import Empty, Queue
 from typing import Any, Optional
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from sage_ready import __version__
 from sage_ready.checks import scan_environment
 from sage_ready.detect import resolve_environment
 from sage_ready.install import install_stack, write_launch_helper
+from sage_ready.local_guard import (
+    CLOUD_REFUSE_MESSAGE,
+    assert_local_runtime,
+    assert_localhost_bind,
+    cloud_block_reason,
+    runtime_info,
+)
 from sage_ready.models import (
     InstallRequest,
     PathRequest,
@@ -44,27 +51,53 @@ _state: dict[str, Any] = {
 }
 _state_lock = threading.Lock()
 
+# Paths that must never run work against a remote ComfyUI from the cloud
+_PROTECTED_API_PREFIXES = (
+    "/api/resolve",
+    "/api/scan",
+    "/api/verify",
+    "/api/install",
+    "/api/launch-command",
+    "/api/write-helper",
+)
+
 
 def _set_state(**kwargs: Any) -> None:
     with _state_lock:
         _state.update(kwargs)
 
 
+def _cloud_http_error() -> JSONResponse:
+    reason = cloud_block_reason() or "cloud/agent host"
+    return JSONResponse(
+        status_code=403,
+        content={
+            "ok": False,
+            "error": f"Sage Ready is local-only ({reason}).",
+            "detail": CLOUD_REFUSE_MESSAGE,
+            "local_only": True,
+        },
+    )
+
+
+@app.middleware("http")
+async def local_only_middleware(request: Request, call_next):
+    path = request.url.path
+    if any(path.startswith(p) for p in _PROTECTED_API_PREFIXES):
+        if cloud_block_reason() is not None:
+            return _cloud_http_error()
+    return await call_next(request)
+
+
 @app.get("/api/health")
 def health() -> dict[str, Any]:
-    import platform as _platform
-    import socket
-
-    system = _platform.system()
+    info = runtime_info()
     return {
-        "status": "ok",
+        "status": "ok" if not info["cloud_blocked"] else "cloud_blocked",
         "version": __version__,
-        "platform": system,
-        "platform_release": _platform.release(),
-        "hostname": socket.gethostname(),
-        "cwd": str(Path.cwd()),
-        "is_windows": system.lower().startswith("win"),
+        "local_only": True,
         "local_url_hint": "http://127.0.0.1:8765",
+        **info,
     }
 
 
@@ -149,7 +182,6 @@ async def install(req: InstallRequest) -> StreamingResponse:
     thread.start()
 
     async def event_stream():
-        # Keepalive-friendly headers applied on response
         while True:
             try:
                 item = await asyncio.to_thread(queue.get, True, 0.5)
@@ -190,25 +222,30 @@ app.mount("/static", StaticFiles(directory=str(WEB)), name="static")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Sage Ready for ComfyUI")
-    parser.add_argument("--host", default="127.0.0.1")
+    parser = argparse.ArgumentParser(
+        description="Sage Ready for ComfyUI (local-only — will not start in Cursor Cloud)"
+    )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Bind address (loopback only: 127.0.0.1 / localhost / ::1)",
+    )
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
 
-    if args.host not in {"127.0.0.1", "localhost", "::1"}:
-        print(
-            "WARNING: Binding outside localhost lets other machines trigger installs "
-            "on this PC. Prefer --host 127.0.0.1 unless you trust the network."
-        )
+    # Hard local-only gates
+    assert_local_runtime()
+    assert_localhost_bind(args.host)
 
-    url = f"http://{args.host}:{args.port}"
+    url = f"http://127.0.0.1:{args.port}"
     if not args.no_browser:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
 
-    print(f"Sage Ready v{__version__}")
+    print(f"Sage Ready v{__version__} (local-only)")
     print(f"Open {url}")
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    print("This app will not run in Cursor Cloud. Use your ComfyUI PC.")
+    uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="info")
 
 
 if __name__ == "__main__":

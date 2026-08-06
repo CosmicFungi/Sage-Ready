@@ -1,14 +1,17 @@
-# Sage Ready
+# Sage Ready (local-only)
 
-Makes **SageAttention** install correctly for **ComfyUI** and proves it with a GPU attention test.
+Makes **SageAttention** install correctly for **ComfyUI** on **this PC**.
 
-**Full install, run, and usage guide (one file):** [GUIDE.md](GUIDE.md)
+**Will not start in Cursor Cloud / remote Linux agents.**  
+Run it on the Windows machine where ComfyUI lives.
 
-## Windows users (ComfyUI on `B:\` / `C:\`)
+**Full guide:** [GUIDE.md](GUIDE.md)
 
-1. Download this branch ZIP:  
+## Windows (ComfyUI on `B:\` / `C:\`)
+
+1. Download branch ZIP:  
    https://github.com/CosmicFungi/MyLab/tree/cursor/sage-attention-comfyui-ecca  
-   → **Code → Download ZIP** (not the empty `main` branch)
+   → **Code → Download ZIP**
 2. Extract → open a terminal in the folder that contains `app.py`
 3. Run:
 
@@ -17,14 +20,8 @@ py -m pip install -r requirements.txt
 py app.py
 ```
 
-4. Use **only** `http://127.0.0.1:8765`  
-   The header must say `Running on Windows`. If you see `/workspace/` in an error, you’re still on the cloud page — close it.
+4. Open **only** `http://127.0.0.1:8765`  
+   Header should say `Local Windows · …`
 
-## Quick start
-
-```bash
-pip install -r requirements.txt
-python app.py
-```
-
-Opens `http://127.0.0.1:8765`. Details and troubleshooting: [GUIDE.md](GUIDE.md).
+5. Paste your ComfyUI folder, e.g.  
+   `B:\ComfyUI-Easy-Install-Windows\ComfyUI-Easy-Install\ComfyUI`

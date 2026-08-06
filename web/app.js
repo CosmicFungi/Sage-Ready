@@ -165,17 +165,21 @@
     } catch {
       throw new Error(`Scan failed (HTTP ${res.status})`);
     }
-    // FastAPI 422 validation errors (e.g. Windows path on Linux)
+    // 403 cloud block, or FastAPI 422 validation errors
     if (!res.ok) {
-      const detail = data && data.detail;
       let msg = `Scan failed (HTTP ${res.status})`;
-      if (typeof detail === "string") {
-        msg = detail;
-      } else if (Array.isArray(detail) && detail.length) {
-        msg = detail
-          .map((d) => (typeof d === "string" ? d : d.msg || JSON.stringify(d)))
-          .join("\n")
-          .replace(/^Value error,\s*/i, "");
+      if (data && (data.error || data.detail) && res.status === 403) {
+        msg = [data.error, data.detail].filter(Boolean).join("\n\n");
+      } else {
+        const detail = data && data.detail;
+        if (typeof detail === "string") {
+          msg = detail;
+        } else if (Array.isArray(detail) && detail.length) {
+          msg = detail
+            .map((d) => (typeof d === "string" ? d : d.msg || JSON.stringify(d)))
+            .join("\n")
+            .replace(/^Value error,\s*/i, "");
+        }
       }
       show(stepReport);
       summary.textContent = msg.split("\n")[0];
@@ -444,7 +448,7 @@
   const saved = localStorage.getItem("sageReady.comfyPath");
   if (saved) pathInput.value = saved;
 
-  // Show which machine this UI is talking to (catches cloud vs local mix-ups)
+  // Show which machine this UI is talking to (blocks cloud confusion)
   (async function showHost() {
     const badge = $("host-badge");
     const warn = $("host-warn");
@@ -455,21 +459,37 @@
       const localPage =
         location.hostname === "127.0.0.1" ||
         location.hostname === "localhost";
+
+      if (data.cloud_blocked || data.status === "cloud_blocked") {
+        badge.textContent = `BLOCKED · cloud/agent host · v${data.version || "?"}`;
+        badge.classList.add("is-remote");
+        warn.classList.remove("hidden");
+        warn.textContent =
+          (data.detail || data.cloud_block_reason || "Cloud host detected") +
+          "\n\nDownload the app onto your Windows PC and run:  py app.py\n" +
+          "Then open ONLY http://127.0.0.1:8765";
+        pathInput.disabled = true;
+        btnScan.disabled = true;
+        return;
+      }
+
       const label = data.is_windows
-        ? `Running on Windows · ${data.hostname || "this PC"} · v${data.version}`
-        : `Running on ${data.platform} · ${data.hostname || "remote"} · v${data.version}`;
+        ? `Local Windows · ${data.hostname || "this PC"} · v${data.version}`
+        : `Local ${data.platform} · ${data.hostname || "this PC"} · v${data.version}`;
       badge.textContent = label;
-      if (!data.is_windows) {
+
+      if (!localPage) {
         badge.classList.add("is-remote");
         warn.classList.remove("hidden");
         warn.textContent =
-          "This Sage Ready server is NOT on Windows, so it cannot see B:\\ or C:\\ folders.\n" +
-          "On your Windows PC: open the repo folder → run  python app.py  → use http://127.0.0.1:8765 only.";
-      } else if (!localPage) {
+          "Wrong URL. Sage Ready is local-only — open http://127.0.0.1:8765 after running py app.py on your PC.";
+        pathInput.disabled = true;
+        btnScan.disabled = true;
+      } else if (!data.is_windows) {
         badge.classList.add("is-remote");
         warn.classList.remove("hidden");
         warn.textContent =
-          "Open http://127.0.0.1:8765 from the PC where you ran python app.py (don't use a cloud/Cursor agent URL).";
+          "This PC is not Windows. For ComfyUI-Easy-Install on B:\\ or C:\\, run Sage Ready on that Windows machine.";
       } else {
         badge.classList.remove("is-remote");
         warn.classList.add("hidden");
