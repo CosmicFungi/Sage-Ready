@@ -79,9 +79,14 @@
   function friendlyError(err) {
     const text = String(err || "Something went wrong");
     if (text.includes("Failed to fetch") || text.includes("NetworkError")) {
-      return "Can’t reach Sage Ready. Is the app still running?";
+      return "Can't reach Sage Ready. Is the app still running?";
     }
     return text;
+  }
+
+  function looksLikeWindowsPath(path) {
+    const t = (path || "").trim();
+    return /^[A-Za-z]:[\\/]/.test(t) || t.startsWith("\\\\");
   }
 
   function renderChecks(checks) {
@@ -148,6 +153,15 @@
       pathInput.focus();
       return null;
     }
+    // Client-side hint: Windows drive letters won't work if Sage Ready isn't on Windows
+    if (looksLikeWindowsPath(comfy_path) && !navigator.userAgent.includes("Windows")) {
+      setPathError(
+        "That is a Windows path (B:\\…), but this browser session does not look like Windows. " +
+          "Run Sage Ready on the same PC as ComfyUI (python app.py), then paste the path again."
+      );
+      pathInput.focus();
+      return null;
+    }
     setPathError("");
     lastPath = comfy_path;
     localStorage.setItem("sageReady.comfyPath", comfy_path);
@@ -159,10 +173,40 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ comfy_path }),
     });
-    if (!res.ok) {
+    let data;
+    try {
+      data = await res.json();
+    } catch {
       throw new Error(`Scan failed (HTTP ${res.status})`);
     }
-    const data = await res.json();
+    // FastAPI 422 validation errors (e.g. Windows path on Linux)
+    if (!res.ok) {
+      const detail = data && data.detail;
+      let msg = `Scan failed (HTTP ${res.status})`;
+      if (typeof detail === "string") {
+        msg = detail;
+      } else if (Array.isArray(detail) && detail.length) {
+        msg = detail
+          .map((d) => (typeof d === "string" ? d : d.msg || JSON.stringify(d)))
+          .join("\n")
+          .replace(/^Value error,\s*/i, "");
+      }
+      show(stepReport);
+      summary.textContent = msg.split("\n")[0];
+      envLine.textContent = "";
+      renderChecks([
+        {
+          id: "error",
+          title: "Could not scan",
+          status: "fail",
+          detail: msg,
+          fix_hint:
+            "Run Sage Ready on the same computer as ComfyUI, then paste a local folder path.",
+        },
+      ]);
+      lastScan = { ok: false, error: msg };
+      return lastScan;
+    }
     lastScan = data;
     if (!data.ok) {
       show(stepReport);
@@ -175,7 +219,8 @@
           status: "fail",
           detail: data.error || "Unknown error",
           fix_hint:
-            "Check that the path points at a ComfyUI folder with main.py.",
+            "Check that the path points at a ComfyUI folder with main.py. " +
+            "Sage Ready must run on the same PC as ComfyUI.",
         },
       ]);
       return data;

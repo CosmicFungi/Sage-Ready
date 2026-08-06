@@ -50,6 +50,37 @@ class PathValidationTests(unittest.TestCase):
         with self.assertRaises(Exception):
             PathRequest(comfy_path="   ")
 
+    def test_windows_path_rejected_on_non_windows(self):
+        from sage_ready.paths import validate_comfy_path_for_host
+        import platform
+
+        if platform.system().lower().startswith("win"):
+            self.skipTest("Host is Windows")
+        with self.assertRaises(ValueError) as ctx:
+            validate_comfy_path_for_host(
+                r"B:\ComfyUI-Easy-Install-Windows\ComfyUI-Easy-Install\ComfyUI"
+            )
+        self.assertIn("same Windows PC", str(ctx.exception))
+
+        client = TestClient(app)
+        r = client.post(
+            "/api/scan",
+            json={
+                "comfy_path": r"B:\ComfyUI-Easy-Install-Windows\ComfyUI-Easy-Install\ComfyUI"
+            },
+        )
+        # Validator raises -> 422, or scan returns ok:false with guidance
+        if r.status_code == 422:
+            detail = str(r.json())
+            self.assertTrue(
+                "Windows" in detail or "same Windows PC" in detail or "comfy_path" in detail
+            )
+        else:
+            self.assertEqual(r.status_code, 200)
+            body = r.json()
+            self.assertFalse(body.get("ok"))
+            self.assertIn("Windows", body.get("error") or body.get("summary") or "")
+
     def test_path_under_prefix_boundary(self):
         self.assertTrue(
             path_under_prefix(

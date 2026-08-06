@@ -48,6 +48,9 @@ You should see `1.2.0`.
 
 ## 2. Run Sage Ready
 
+**Important:** Run Sage Ready on the **same computer** where ComfyUI is installed.  
+If you paste `B:\ComfyUI\...` into Sage Ready running on another machine (or in the cloud), that drive does not exist there — use your Windows PC instead.
+
 ```bash
 python app.py
 ```

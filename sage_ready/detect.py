@@ -93,10 +93,9 @@ print(json.dumps(out))
 
 
 def normalize_comfy_path(comfy_path: str) -> Path:
-    path = Path(comfy_path).expanduser().resolve()
-    if path.is_file() and path.name.lower() == "main.py":
-        return path.parent
-    return path
+    from .paths import normalize_to_path
+
+    return normalize_to_path(comfy_path)
 
 
 def find_main_py(comfy_root: Path) -> Optional[Path]:
@@ -319,11 +318,17 @@ def launch_scripts_have_sage_flag(scripts: list[str]) -> bool:
 
 
 def resolve_environment(comfy_path: str) -> EnvSnapshot:
-    root = normalize_comfy_path(comfy_path)
+    try:
+        root = normalize_comfy_path(comfy_path)
+    except ValueError as exc:
+        # Surface clear Windows-on-Linux guidance from path validation
+        raise FileNotFoundError(str(exc)) from exc
     if not root.exists():
         raise FileNotFoundError(
             f"That path does not exist: {root}. "
-            "Choose your ComfyUI folder (the one with main.py)."
+            "Choose your ComfyUI folder (the one with main.py). "
+            "Sage Ready must run on the same computer as ComfyUI "
+            "(paste a local folder path, not a path from another PC)."
         )
 
     main_py = find_main_py(root)
