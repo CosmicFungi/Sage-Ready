@@ -336,7 +336,7 @@ class ApiRegressionTests(unittest.TestCase):
         r = self.client.get("/api/health")
         self.assertEqual(r.status_code, 200)
         data = r.json()
-        self.assertEqual(data["version"], "1.3.1")
+        self.assertEqual(data["version"], "1.33")
         # Never leak PC hostname or local paths into the public health API
         self.assertNotIn("hostname", data)
         self.assertNotIn("cwd", data)

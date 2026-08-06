@@ -1,8 +1,10 @@
 # Sage Ready — Install, Run & Guide
 
-One file for everything: install Sage Ready, run it, and use it to make **SageAttention** safe for **ComfyUI**.
+One file for everything: install Sage Ready, run it, and use it to make **SageAttention** Ready for **ComfyUI**.
 
-**Version:** 1.3.1  
+**Author:** [CosmicFungi](https://github.com/CosmicFungi)  
+**Version:** 1.33  
+**License:** MIT  
 **Mode:** local-only (will **not** start in Cursor Cloud / remote agents)
 
 ---
@@ -61,7 +63,7 @@ Check import:
 python -c "from sage_ready import __version__; print(__version__)"
 ```
 
-You should see `1.3.1`.
+You should see `1.33`.
 
 ---
 
@@ -73,7 +75,7 @@ You should see `1.3.1`.
 
 In the page header you should see something like:
 
-`Local Windows · v1.3.1`
+`Local Windows · v1.33`
 
 And the address bar must be:
 
@@ -265,3 +267,13 @@ python -m unittest discover -s tests -v
 - Wheel downloads are allowlisted to official [woct0rdho/SageAttention releases](https://github.com/woct0rdho/SageAttention/releases)
 - Wheel matrix: `sage_ready/wheels_matrix.json`
 - Local-only: will not start under Cursor Cloud (`CURSOR_AGENT`)
+
+---
+
+## 9. Credits & license
+
+Created and maintained by **[CosmicFungi](https://github.com/CosmicFungi)**.
+
+Released under the [MIT License](LICENSE).
+
+SageAttention is by [thu-ml](https://github.com/thu-ml/SageAttention). ComfyUI is by [comfyanonymous](https://github.com/comfyanonymous/ComfyUI).
