@@ -84,11 +84,6 @@
     return text;
   }
 
-  function looksLikeWindowsPath(path) {
-    const t = (path || "").trim();
-    return /^[A-Za-z]:[\\/]/.test(t) || t.startsWith("\\\\");
-  }
-
   function renderChecks(checks) {
     checklist.innerHTML = "";
     checks.forEach((item) => {
@@ -150,15 +145,6 @@
     const comfy_path = pathInput.value.trim();
     if (!comfy_path) {
       setPathError("Enter the path to your ComfyUI folder (the one with main.py).");
-      pathInput.focus();
-      return null;
-    }
-    // Client-side hint: Windows drive letters won't work if Sage Ready isn't on Windows
-    if (looksLikeWindowsPath(comfy_path) && !navigator.userAgent.includes("Windows")) {
-      setPathError(
-        "That is a Windows path (B:\\…), but this browser session does not look like Windows. " +
-          "Run Sage Ready on the same PC as ComfyUI (python app.py), then paste the path again."
-      );
       pathInput.focus();
       return null;
     }
@@ -457,4 +443,41 @@
 
   const saved = localStorage.getItem("sageReady.comfyPath");
   if (saved) pathInput.value = saved;
+
+  // Show which machine this UI is talking to (catches cloud vs local mix-ups)
+  (async function showHost() {
+    const badge = $("host-badge");
+    const warn = $("host-warn");
+    if (!badge) return;
+    try {
+      const res = await fetch("/api/health");
+      const data = await res.json();
+      const localPage =
+        location.hostname === "127.0.0.1" ||
+        location.hostname === "localhost";
+      const label = data.is_windows
+        ? `Running on Windows · ${data.hostname || "this PC"} · v${data.version}`
+        : `Running on ${data.platform} · ${data.hostname || "remote"} · v${data.version}`;
+      badge.textContent = label;
+      if (!data.is_windows) {
+        badge.classList.add("is-remote");
+        warn.classList.remove("hidden");
+        warn.textContent =
+          "This Sage Ready server is NOT on Windows, so it cannot see B:\\ or C:\\ folders.\n" +
+          "On your Windows PC: open the repo folder → run  python app.py  → use http://127.0.0.1:8765 only.";
+      } else if (!localPage) {
+        badge.classList.add("is-remote");
+        warn.classList.remove("hidden");
+        warn.textContent =
+          "Open http://127.0.0.1:8765 from the PC where you ran python app.py (don't use a cloud/Cursor agent URL).";
+      } else {
+        badge.classList.remove("is-remote");
+        warn.classList.add("hidden");
+        warn.textContent = "";
+      }
+    } catch {
+      badge.textContent = "Can't reach Sage Ready server";
+      badge.classList.add("is-remote");
+    }
+  })();
 })();

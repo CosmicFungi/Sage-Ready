@@ -51,8 +51,21 @@ def _set_state(**kwargs: Any) -> None:
 
 
 @app.get("/api/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "version": __version__}
+def health() -> dict[str, Any]:
+    import platform as _platform
+    import socket
+
+    system = _platform.system()
+    return {
+        "status": "ok",
+        "version": __version__,
+        "platform": system,
+        "platform_release": _platform.release(),
+        "hostname": socket.gethostname(),
+        "cwd": str(Path.cwd()),
+        "is_windows": system.lower().startswith("win"),
+        "local_url_hint": "http://127.0.0.1:8765",
+    }
 
 
 @app.get("/api/status", response_model=StatusResponse)

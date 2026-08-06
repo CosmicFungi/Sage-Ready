@@ -51,6 +51,34 @@ You should see `1.2.0`.
 **Important:** Run Sage Ready on the **same computer** where ComfyUI is installed.  
 If you paste `B:\ComfyUI\...` into Sage Ready running on another machine (or in the cloud), that drive does not exist there — use your Windows PC instead.
 
+### How to know you’re on the local Windows app
+
+In the page header you should see something like:
+
+`Running on Windows · <your-pc-name> · v1.2.0`
+
+And the address bar must be:
+
+`http://127.0.0.1:8765`
+
+If you see `Running on Linux` or a path error containing `/workspace/`, you are still using the **cloud/Cursor agent** page — close that tab and open the local URL after `python app.py` on Windows.
+
+### Download onto Windows (correct branch)
+
+The app lives on branch `cursor/sage-attention-comfyui-ecca` (not empty `main`).
+
+1. Open: https://github.com/CosmicFungi/MyLab/tree/cursor/sage-attention-comfyui-ecca  
+2. **Code → Download ZIP**  
+3. Extract to e.g. `C:\SageReady\`  
+4. In that folder (must contain `app.py` and `GUIDE.md`), run:
+
+```bat
+py -m pip install -r requirements.txt
+py app.py
+```
+
+5. Only use the browser tab that opens to `http://127.0.0.1:8765`
+
 ```bash
 python app.py
 ```
