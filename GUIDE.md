@@ -34,7 +34,7 @@ If `py app.py` prints `Refusing to start on a cloud/agent host`, you are not on 
 
 ```bash
 # From this repo folder
-cd /path/to/MyLab
+cd /path/to/Sage-Ready
 
 python -m pip install -r requirements.txt
 ```
