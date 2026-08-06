@@ -1,0 +1,311 @@
+{
+  "cuda_aliases": {
+    "129": "128",
+    "132": "130"
+  },
+  "known_bad_versions": [
+    "2.2.0.post5"
+  ],
+  "preferred_min_sa2": "2.2.0.post6",
+  "fallback_pypi": "sageattention==1.0.6",
+  "triton_constraints": [
+    {"torch_min": [2, 10], "constraint": ">=3.6,<4"},
+    {"torch_min": [2, 9], "constraint": ">=3.5,<3.6"},
+    {"torch_min": [2, 8], "constraint": ">=3.4,<3.5"},
+    {"torch_min": [2, 7], "constraint": ">=3.3,<3.4"},
+    {"torch_min": [2, 6], "constraint": ">=3.2,<3.3"},
+    {"torch_min": [0, 0], "constraint": "<3.2"}
+  ],
+  "wheels": [
+    {
+      "sage_ver": "2.2.0.post6",
+      "cuda": "130",
+      "torch_pattern": "2.13",
+      "py_spec": "310",
+      "tag": "v2.2.0-windows.post6",
+      "abi3": true,
+      "torch_filename_ver": "2.10.0andhigher",
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.2.0.post6",
+      "cuda": "128",
+      "torch_pattern": "2.13",
+      "py_spec": "310",
+      "tag": "v2.2.0-windows.post6",
+      "abi3": true,
+      "torch_filename_ver": "2.10.0andhigher",
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.2.0.post6",
+      "cuda": "130",
+      "torch_pattern": "2.12",
+      "py_spec": "310",
+      "tag": "v2.2.0-windows.post6",
+      "abi3": true,
+      "torch_filename_ver": "2.10.0andhigher",
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.2.0.post6",
+      "cuda": "128",
+      "torch_pattern": "2.12",
+      "py_spec": "310",
+      "tag": "v2.2.0-windows.post6",
+      "abi3": true,
+      "torch_filename_ver": "2.10.0andhigher",
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.2.0.post6",
+      "cuda": "130",
+      "torch_pattern": "2.11",
+      "py_spec": "310",
+      "tag": "v2.2.0-windows.post6",
+      "abi3": true,
+      "torch_filename_ver": "2.10.0andhigher",
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.2.0.post6",
+      "cuda": "128",
+      "torch_pattern": "2.11",
+      "py_spec": "310",
+      "tag": "v2.2.0-windows.post6",
+      "abi3": true,
+      "torch_filename_ver": "2.10.0andhigher",
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.2.0.post6",
+      "cuda": "130",
+      "torch_pattern": "2.10",
+      "py_spec": "310",
+      "tag": "v2.2.0-windows.post6",
+      "abi3": true,
+      "torch_filename_ver": "2.10.0andhigher",
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.2.0.post6",
+      "cuda": "128",
+      "torch_pattern": "2.10",
+      "py_spec": "310",
+      "tag": "v2.2.0-windows.post6",
+      "abi3": true,
+      "torch_filename_ver": "2.10.0andhigher",
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.2.0.post6",
+      "cuda": "130",
+      "torch_pattern": "2.9",
+      "py_spec": "310",
+      "tag": "v2.2.0-windows.post6",
+      "abi3": true,
+      "torch_filename_ver": "2.9.1",
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.2.0.post6",
+      "cuda": "128",
+      "torch_pattern": "2.9",
+      "py_spec": "310",
+      "tag": "v2.2.0-windows.post6",
+      "abi3": true,
+      "torch_filename_ver": "2.9.1",
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.2.0.post4",
+      "cuda": "130",
+      "torch_pattern": "2.11",
+      "py_spec": null,
+      "tag": "v2.2.0-windows.post4",
+      "abi3": true,
+      "torch_filename_ver": "2.9.0andhigher",
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.2.0.post4",
+      "cuda": "128",
+      "torch_pattern": "2.11",
+      "py_spec": null,
+      "tag": "v2.2.0-windows.post4",
+      "abi3": true,
+      "torch_filename_ver": "2.9.0andhigher",
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.2.0.post4",
+      "cuda": "130",
+      "torch_pattern": "2.10",
+      "py_spec": null,
+      "tag": "v2.2.0-windows.post4",
+      "abi3": true,
+      "torch_filename_ver": "2.9.0andhigher",
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.2.0.post4",
+      "cuda": "128",
+      "torch_pattern": "2.10",
+      "py_spec": null,
+      "tag": "v2.2.0-windows.post4",
+      "abi3": true,
+      "torch_filename_ver": "2.9.0andhigher",
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.2.0.post4",
+      "cuda": "130",
+      "torch_pattern": "2.9",
+      "py_spec": null,
+      "tag": "v2.2.0-windows.post4",
+      "abi3": true,
+      "torch_filename_ver": "2.9.0andhigher",
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.2.0.post4",
+      "cuda": "128",
+      "torch_pattern": "2.9",
+      "py_spec": null,
+      "tag": "v2.2.0-windows.post4",
+      "abi3": true,
+      "torch_filename_ver": "2.9.0andhigher",
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.2.0.post3",
+      "cuda": "130",
+      "torch_pattern": "2.9",
+      "py_spec": null,
+      "tag": "v2.2.0-windows.post3",
+      "abi3": true,
+      "torch_filename_ver": "2.9.0",
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.2.0.post3",
+      "cuda": "128",
+      "torch_pattern": "2.9",
+      "py_spec": null,
+      "tag": "v2.2.0-windows.post3",
+      "abi3": true,
+      "torch_filename_ver": "2.9.0",
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.2.0.post3",
+      "cuda": "128",
+      "torch_pattern": "2.8",
+      "py_spec": null,
+      "tag": "v2.2.0-windows.post3",
+      "abi3": true,
+      "torch_filename_ver": "2.8.0",
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.2.0.post3",
+      "cuda": "128",
+      "torch_pattern": "2.7",
+      "py_spec": null,
+      "tag": "v2.2.0-windows.post3",
+      "abi3": true,
+      "torch_filename_ver": "2.7.1",
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.2.0.post3",
+      "cuda": "126",
+      "torch_pattern": "2.6",
+      "py_spec": null,
+      "tag": "v2.2.0-windows.post3",
+      "abi3": true,
+      "torch_filename_ver": "2.6.0",
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.2.0.post3",
+      "cuda": "124",
+      "torch_pattern": "2.5",
+      "py_spec": null,
+      "tag": "v2.2.0-windows.post3",
+      "abi3": true,
+      "torch_filename_ver": "2.5.1",
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.1.1",
+      "cuda": "128",
+      "torch_pattern": "2.7.1",
+      "py_spec": "312",
+      "tag": "v2.1.1-windows",
+      "abi3": false,
+      "torch_filename_ver": null,
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.1.1",
+      "cuda": "128",
+      "torch_pattern": "2.7.0",
+      "py_spec": "312",
+      "tag": "v2.1.1-windows",
+      "abi3": false,
+      "torch_filename_ver": null,
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.1.1",
+      "cuda": "128",
+      "torch_pattern": "2.7.0",
+      "py_spec": "311",
+      "tag": "v2.1.1-windows",
+      "abi3": false,
+      "torch_filename_ver": null,
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.1.1",
+      "cuda": "126",
+      "torch_pattern": "2.6.0",
+      "py_spec": "312",
+      "tag": "v2.1.1-windows",
+      "abi3": false,
+      "torch_filename_ver": null,
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.1.1",
+      "cuda": "126",
+      "torch_pattern": "2.6.0",
+      "py_spec": "311",
+      "tag": "v2.1.1-windows",
+      "abi3": false,
+      "torch_filename_ver": null,
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.1.1",
+      "cuda": "124",
+      "torch_pattern": "2.5.1",
+      "py_spec": "312",
+      "tag": "v2.1.1-windows",
+      "abi3": false,
+      "torch_filename_ver": null,
+      "platforms": ["win32"]
+    },
+    {
+      "sage_ver": "2.1.1",
+      "cuda": "124",
+      "torch_pattern": "2.5.1",
+      "py_spec": "311",
+      "tag": "v2.1.1-windows",
+      "abi3": false,
+      "torch_filename_ver": null,
+      "platforms": ["win32"]
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sage Ready — ComfyUI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="atmosphere" aria-hidden="true"></div>
+  <main class="shell">
+    <header class="hero">
+      <p class="brand">Sage Ready</p>
+      <h1 class="headline">Make SageAttention safe for ComfyUI</h1>
+      <p class="lede">Point at your ComfyUI folder. We install into the right Python, then prove the attention kernel actually works.</p>
+    </header>
+
+    <section class="step" id="step-locate" data-step="locate">
+      <div class="step-label">Step 1 · Locate</div>
+      <label class="path-label" for="comfy-path">ComfyUI folder</label>
+      <div class="path-row">
+        <input id="comfy-path" type="text" placeholder="C:\ComfyUI  or  /home/you/ComfyUI" autocomplete="off" spellcheck="false" />
+        <button type="button" class="btn btn-primary" id="btn-scan">Scan</button>
+      </div>
+      <p class="hint">Use the folder that contains <code>main.py</code>. Portable installs are detected via <code>python_embeded</code>.</p>
+    </section>
+
+    <section class="step hidden" id="step-report" data-step="report">
+      <div class="step-label">Step 2 · Checklist</div>
+      <div class="env-line" id="env-line"></div>
+      <p class="summary" id="summary"></p>
+      <ul class="checklist" id="checklist"></ul>
+      <div class="actions">
+        <button type="button" class="btn btn-primary" id="btn-fix">Install &amp; Fix</button>
+        <button type="button" class="btn btn-ghost" id="btn-repair">Repair</button>
+        <button type="button" class="btn btn-ghost" id="btn-verify">Verify kernel</button>
+      </div>
+      <details class="log-panel" id="log-panel">
+        <summary>Install log</summary>
+        <pre id="log-output"></pre>
+      </details>
+    </section>
+
+    <section class="step hidden" id="step-ready" data-step="ready">
+      <div class="step-label">Ready</div>
+      <p class="ready-brand">Sage Ready</p>
+      <h2 class="ready-title">SageAttention is ready for ComfyUI</h2>
+      <p class="ready-copy" id="ready-copy">Imports succeed and the GPU kernel matches PyTorch SDPA.</p>
+      <div class="launch-box">
+        <span class="launch-label">Start ComfyUI with</span>
+        <code id="launch-cmd"></code>
+        <button type="button" class="btn btn-small" id="btn-copy">Copy</button>
+      </div>
+      <p class="hint" id="helper-hint"></p>
+      <button type="button" class="btn btn-ghost" id="btn-rescan">Scan again</button>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
