@@ -2,7 +2,7 @@
 
 One file for everything: install Sage Ready, run it, and use it to make **SageAttention** safe for **ComfyUI**.
 
-**Version:** 1.2.0  
+**Version:** 1.3.0  
 **Mode:** local-only (will **not** start in Cursor Cloud / remote agents)
 
 ---
@@ -15,7 +15,7 @@ Sage Ready refuses to run in Cursor Cloud so it cannot “see” a fake `/worksp
 - Binds only to `http://127.0.0.1:8765`
 - Scan/Install APIs return **403** on cloud/agent hosts
 
-If `py app.py` prints `Refusing to start on a cloud/agent host`, you are not on your ComfyUI machine — download the ZIP onto Windows and run it there.
+If `py app.py` prints `Refusing to start on a cloud/agent host`, you are not on your ComfyUI machine — download the ZIP onto that PC and run it there.
 
 ---
 
@@ -37,6 +37,12 @@ cd /path/to/MyLab
 python -m pip install -r requirements.txt
 ```
 
+On Windows, `py` often works better:
+
+```bat
+py -m pip install -r requirements.txt
+```
+
 Optional: use a virtual environment for Sage Ready itself (separate from ComfyUI):
 
 ```bash
@@ -55,30 +61,27 @@ Check import:
 python -c "from sage_ready import __version__; print(__version__)"
 ```
 
-You should see `1.2.0`.
+You should see `1.3.0`.
 
 ---
 
 ## 2. Run Sage Ready
 
-**Important:** Run Sage Ready on the **same computer** where ComfyUI is installed.  
-If you paste `B:\ComfyUI\...` into Sage Ready running on another machine (or in the cloud), that drive does not exist there — use your Windows PC instead.
+**Important:** Run Sage Ready on the **same computer** where ComfyUI is installed.
 
-### How to know you’re on the local Windows app
+### How to know you’re on the local app
 
 In the page header you should see something like:
 
-`Running on Windows · <your-pc-name> · v1.2.0`
+`Local Windows · <your-pc-name> · v1.3.0`
 
 And the address bar must be:
 
 `http://127.0.0.1:8765`
 
-If you see `Running on Linux` or a path error containing `/workspace/`, you are still using the **cloud/Cursor agent** page — close that tab and open the local URL after `python app.py` on Windows.
+If you see `BLOCKED · cloud/agent` or a path error containing `/workspace/`, close that tab and use the local URL after `py app.py` on your ComfyUI PC.
 
 ### Download onto Windows (correct branch)
-
-The app lives on branch `cursor/sage-attention-comfyui-ecca` (not empty `main`).
 
 1. Open: https://github.com/CosmicFungi/MyLab/tree/cursor/sage-attention-comfyui-ecca  
 2. **Code → Download ZIP**  
@@ -91,6 +94,7 @@ py app.py
 ```
 
 5. Only use the browser tab that opens to `http://127.0.0.1:8765`
+6. Paste your ComfyUI folder — **example:** `B:\ComfyUI_windows_portable\ComfyUI`
 
 ```bash
 python app.py
@@ -114,7 +118,7 @@ python app.py --no-browser --port 8765
 
 Then open the URL shown in the terminal (default `http://127.0.0.1:8765`).
 
-Stay on `127.0.0.1` / `localhost` unless you trust the network — binding elsewhere can let others trigger installs on your machine.
+Stay on `127.0.0.1` / `localhost`. Non-loopback binds are refused.
 
 Stop the app with `Ctrl+C` in the terminal.
 
@@ -133,6 +137,7 @@ Stop the app with `Ctrl+C` in the terminal.
 ### Step-by-step in the UI
 
 1. **Locate** — Paste the ComfyUI folder that contains `main.py`  
+   - **Example:** `B:\ComfyUI_windows_portable\ComfyUI`  
    - Portable root **or** the inner `ComfyUI` folder both work  
    - Windows portable spelling is `python_embeded` (yes, that spelling)
 2. Click **Scan**
@@ -175,7 +180,10 @@ Existing helpers are backed up to `*.bak` before overwrite.
 
 ### Windows portable ComfyUI
 
-Point Sage Ready at the portable root or the inner `ComfyUI` folder.  
+Point Sage Ready at the portable root or the inner `ComfyUI` folder.
+
+**Example path:** `B:\ComfyUI_windows_portable\ComfyUI`
+
 Preferred interpreter:
 
 ```text
@@ -218,6 +226,8 @@ All of these must pass against **ComfyUI’s own Python** (not a random system P
 
 Known-bad builds such as **2.2.0.post5** (black/noise risk) are flagged; Repair upgrades toward **post6** when available.
 
+Wheel tags like `2.2.0+cu130torch2.10.0andhigher.post6` count as **2.2.0.post6** (no false upgrade warning).
+
 Fallback Python (system/conda instead of portable/venv) can install packages, but **blocks Ready** so you don’t get a false green light.
 
 ---
@@ -226,7 +236,7 @@ Fallback Python (system/conda instead of portable/venv) can install packages, bu
 
 | Symptom | What to do |
 |---------|------------|
-| Path / “No main.py” | Select the folder that contains `main.py` |
+| Path / “No main.py” | Select the folder that contains `main.py` (example: `B:\ComfyUI_windows_portable\ComfyUI`) |
 | Wrong Python / module not found in ComfyUI | Prefer `python_embeded` or a `.venv` beside ComfyUI, then **Repair** |
 | No GPU / `nvidia-smi` missing | Install NVIDIA drivers |
 | PyTorch has no CUDA | Install a CUDA PyTorch build into ComfyUI’s Python (not CPU torch) |
@@ -236,6 +246,7 @@ Fallback Python (system/conda instead of portable/venv) can install packages, bu
 | GPU test skipped | Ready needs an NVIDIA GPU |
 | SageAttention not used in ComfyUI | Restart with `--use-sage-attention` or the helper script |
 | Can’t open the UI | Confirm the terminal still shows Sage Ready running; try `http://127.0.0.1:8765` |
+| `/workspace/` in errors | You’re on Cursor Cloud — run locally on your ComfyUI PC instead |
 
 ---
 
@@ -253,3 +264,4 @@ python -m unittest discover -s tests -v
 - Does **not** install Visual Studio Build Tools or compile CUDA from source
 - Wheel downloads are allowlisted to official [woct0rdho/SageAttention releases](https://github.com/woct0rdho/SageAttention/releases)
 - Wheel matrix: `sage_ready/wheels_matrix.json`
+- Local-only: will not start under Cursor Cloud (`CURSOR_AGENT`)

@@ -21,6 +21,7 @@ On the Windows PC where ComfyUI is installed:
   3. py -m pip install -r requirements.txt
   4. py app.py
   5. Open ONLY http://127.0.0.1:8765
+  6. Paste your ComfyUI folder (example: B:\\ComfyUI_windows_portable\\ComfyUI)
 """.strip()
 
 

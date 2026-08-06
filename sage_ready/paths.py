@@ -52,7 +52,7 @@ def validate_comfy_path_for_host(value: str) -> str:
             "  3. pip install -r requirements.txt\n"
             "  4. python app.py\n"
             "  5. Paste your ComfyUI folder again "
-            "(example: B:\\ComfyUI-Easy-Install-Windows\\ComfyUI-Easy-Install\\ComfyUI)"
+            "(example: B:\\ComfyUI_windows_portable\\ComfyUI)"
         )
     return cleaned
 

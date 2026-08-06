@@ -29,11 +29,23 @@
     repair: "Repair",
     verify: "Test GPU",
   };
+  const PATH_KEY = "sageReady.comfyPath";
+  const PATH_KEY_VER = "sageReady.comfyPath.v";
+  const PATH_SCHEMA = "2"; // bump to ignore old machine-specific saved paths
 
   let lastPath = "";
   let lastScan = null;
   let busyDepth = 0;
   let activeBusyBtn = null;
+
+  function isExampleOrStalePath(path) {
+    const t = (path || "").trim().toLowerCase();
+    if (!t) return true;
+    // Never restore one-off install layouts or example text
+    if (t.includes("comfyui-easy-install")) return true;
+    if (t.includes("example:")) return true;
+    return false;
+  }
 
   function setPathError(msg) {
     if (!msg) {
@@ -150,7 +162,8 @@
     }
     setPathError("");
     lastPath = comfy_path;
-    localStorage.setItem("sageReady.comfyPath", comfy_path);
+    localStorage.setItem(PATH_KEY, comfy_path);
+    localStorage.setItem(PATH_KEY_VER, PATH_SCHEMA);
     hide(stepReady);
     shell.classList.remove("ready-mode");
 
@@ -445,8 +458,15 @@
     }
   });
 
-  const saved = localStorage.getItem("sageReady.comfyPath");
-  if (saved) pathInput.value = saved;
+  const savedVer = localStorage.getItem(PATH_KEY_VER);
+  const saved = localStorage.getItem(PATH_KEY);
+  if (savedVer === PATH_SCHEMA && saved && !isExampleOrStalePath(saved)) {
+    pathInput.value = saved;
+  } else {
+    localStorage.removeItem(PATH_KEY);
+    localStorage.setItem(PATH_KEY_VER, PATH_SCHEMA);
+    pathInput.value = "";
+  }
 
   // Show which machine this UI is talking to (blocks cloud confusion)
   (async function showHost() {
@@ -489,7 +509,7 @@
         badge.classList.add("is-remote");
         warn.classList.remove("hidden");
         warn.textContent =
-          "This PC is not Windows. For ComfyUI-Easy-Install on B:\\ or C:\\, run Sage Ready on that Windows machine.";
+          "This PC is not Windows. For a Windows ComfyUI portable install (example: B:\\ComfyUI_windows_portable\\ComfyUI), run Sage Ready on that Windows machine.";
       } else {
         badge.classList.remove("is-remote");
         warn.classList.add("hidden");

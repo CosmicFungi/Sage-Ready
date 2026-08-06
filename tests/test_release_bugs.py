@@ -58,7 +58,7 @@ class PathValidationTests(unittest.TestCase):
             self.skipTest("Host is Windows")
         with self.assertRaises(ValueError) as ctx:
             validate_comfy_path_for_host(
-                r"B:\ComfyUI-Easy-Install-Windows\ComfyUI-Easy-Install\ComfyUI"
+                r"B:\ComfyUI_windows_portable\ComfyUI"
             )
         self.assertIn("same Windows PC", str(ctx.exception))
 
@@ -66,7 +66,7 @@ class PathValidationTests(unittest.TestCase):
         r = client.post(
             "/api/scan",
             json={
-                "comfy_path": r"B:\ComfyUI-Easy-Install-Windows\ComfyUI-Easy-Install\ComfyUI"
+                "comfy_path": r"B:\ComfyUI_windows_portable\ComfyUI"
             },
         )
         # On Cursor Cloud: 403 local-only. Elsewhere: 422 Windows-path validation.
@@ -335,7 +335,7 @@ class ApiRegressionTests(unittest.TestCase):
     def test_health_version(self):
         r = self.client.get("/api/health")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.json()["version"], "1.2.0")
+        self.assertEqual(r.json()["version"], "1.3.0")
 
     def test_verify_bad_json_does_not_500(self):
         # Call verify_kernel directly (bypasses cloud HTTP middleware)
