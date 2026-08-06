@@ -16,7 +16,7 @@ That environment cannot see your Windows ComfyUI folder (B:\\ or C:\\).
 
 On the Windows PC where ComfyUI is installed:
   1. Download branch ZIP:
-     https://github.com/CosmicFungi/MyLab/tree/cursor/sage-attention-comfyui-ecca
+     https://github.com/CosmicFungi/Sage-Ready
   2. Extract, open a terminal in the folder that contains app.py
   3. py -m pip install -r requirements.txt
   4. py app.py

@@ -85,7 +85,7 @@ If you see `BLOCKED · cloud/agent` or a path error containing `/workspace/`, cl
 
 ### Download onto Windows (correct branch)
 
-1. Open: https://github.com/CosmicFungi/MyLab/tree/cursor/sage-attention-comfyui-ecca  
+1. Open: https://github.com/CosmicFungi/Sage-Ready  
 2. **Code → Download ZIP**  
 3. Extract to e.g. `C:\SageReady\`  
 4. In that folder (must contain `app.py` and `GUIDE.md`), run:

@@ -16,7 +16,7 @@ Will **not** start in Cursor Cloud / remote Linux agents. Run it on the PC where
 
 ## Quick start (Windows)
 
-1. Download ZIP from this repo → **Code → Download ZIP**
+1. Download ZIP from https://github.com/CosmicFungi/Sage-Ready → **Code → Download ZIP**
 2. Extract → open a terminal in the folder that contains `app.py`
 3. Run:
 
