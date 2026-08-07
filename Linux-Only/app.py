@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sage Ready — LOCAL web app for ComfyUI SageAttention readiness."""
+"""Sage Ready — LOCAL web app for ComfyUI SageAttention readiness"""
 
 from __future__ import annotations
 
