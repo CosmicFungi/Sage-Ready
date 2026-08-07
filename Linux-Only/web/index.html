@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sage Ready — ComfyUI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="atmosphere" aria-hidden="true"></div>
+  <main class="shell">
+    <header class="hero">
+      <p class="brand">Sage Ready</p>
+      <p class="host-badge" id="host-badge">Checking where this app is running…</p>
+      <h1 class="headline">Make SageAttention Ready for ComfyUI</h1>
+      <p class="lede">Point at your ComfyUI folder. We install SageAttention into that install’s Python—not a random system one—then run a quick GPU test so ComfyUI won’t crash or spit out black frames.</p>
+      <p class="host-warn hidden" id="host-warn" role="status"></p>
+    </header>
+
+    <section class="step" id="step-locate" data-step="locate">
+      <div class="step-label">Step 1 · Locate</div>
+      <label class="path-label" for="comfy-path">ComfyUI folder</label>
+      <div class="path-row">
+        <input id="comfy-path" type="text" placeholder="example: /home/you/ComfyUI" autocomplete="off" spellcheck="false" />
+        <button type="button" class="btn btn-primary" id="btn-scan">Scan</button>
+      </div>
+      <p class="hint" id="path-hint">Choose the folder that contains <code>main.py</code>. On Linux, prefer a <code>.venv</code> beside ComfyUI (example: <code>/home/you/ComfyUI</code>). On Windows portable, use <code>B:\ComfyUI_windows_portable\ComfyUI</code> — we look for <code>python_embeded</code>.</p>
+      <p class="form-error hidden" id="path-error" role="alert"></p>
+    </section>
+
+    <section class="step hidden" id="step-report" data-step="report">
+      <div class="step-label">Step 2 · Checklist</div>
+      <div class="env-line" id="env-line"></div>
+      <p class="summary" id="summary"></p>
+      <ul class="checklist" id="checklist"></ul>
+      <div class="actions">
+        <button type="button" class="btn btn-primary" id="btn-fix">Install &amp; Fix</button>
+        <button type="button" class="btn btn-ghost" id="btn-repair">Repair</button>
+        <button type="button" class="btn btn-ghost" id="btn-verify">Test GPU</button>
+      </div>
+      <p class="hint action-hint">Install &amp; Fix adds missing packages. Repair force-reinstalls into ComfyUI’s Python—use it for wrong-folder installs or black/noisy output.</p>
+      <details class="log-panel" id="log-panel">
+        <summary>Install log</summary>
+        <pre id="log-output"></pre>
+      </details>
+    </section>
+
+    <section class="step hidden" id="step-ready" data-step="ready">
+      <div class="step-label">Step 3 · Ready</div>
+      <p class="ready-brand">Sage Ready</p>
+      <h2 class="ready-title">SageAttention is ready for ComfyUI</h2>
+      <p class="ready-copy" id="ready-copy">SageAttention imports cleanly, and a live GPU test matched PyTorch’s built-in attention. Restart ComfyUI with the command below.</p>
+      <div class="launch-box">
+        <span class="launch-label">Start ComfyUI with this flag</span>
+        <code id="launch-cmd"></code>
+        <button type="button" class="btn btn-small" id="btn-copy">Copy</button>
+        <button type="button" class="btn btn-small btn-secondary" id="btn-helper">Save helper script</button>
+      </div>
+      <p class="hint" id="helper-hint">ComfyUI must be started with <code>--use-sage-attention</code> or SageAttention will not be used. Fully restart ComfyUI if it was already open.</p>
+      <button type="button" class="btn btn-ghost" id="btn-rescan">Scan again</button>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <p>Sage Ready · by <a href="https://github.com/CosmicFungi" rel="noopener noreferrer">CosmicFungi</a> · MIT License · v1.34</p>
+  </footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>
